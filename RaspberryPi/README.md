@@ -37,4 +37,36 @@ node -v
 npm -v
 ```
 
+## Node-Red
 
+Instalar Node-Red con el siguiente comando.
+
+```
+bash <(curl -sL https://raw.githubusercontent.com/node-red/linux-installers/master/deb/update-nodejs-and-nodered)
+```
+
+- Dejar todas las configuraciones como predeterminadas
+- Configurar seguridad con usuario `cinema` y password `barredura`
+- Usar frase de encriptado `cinemabarredura`
+
+Se puede probar el funcionamiento ejecutando el comando `node-red` y entrando a `http://127.0.0.1:1880/`
+
+**Recomendación**: Configurar Firefox para que abra las pestañas anteriores al arrancar
+
+Activar Node-Red al iniciar el sistema
+```
+sudo systemctl enable nodered.service
+sudo systemctl start nodered.service
+```
+
+Comprobar estado de Node-Red
+```
+systemctl status nodered.service
+```
+
+Puedes consultar los logs con el siguiente comando
+```
+journalctl -u nodered -f
+```
+
+Comprobar que todo quedó correcto reiniciando la Raspberry Pi y visitando `http://127.0.0.1:1880/`
