@@ -123,3 +123,8 @@ Verás algo como lo siguiente.
 | notas          | varchar(255)        | YES  |     | NULL                 |                |
 +----------------+---------------------+------+-----+----------------------+----------------+
 ```
+
+Salir de MariaDB CLI.
+```
+exit;
+```
