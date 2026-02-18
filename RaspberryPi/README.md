@@ -18,6 +18,7 @@ Se requiere contar con lo siguiente:
 - Node.JS
 - Node-Red
 - MariaDB Server
+- Grafana
 
 ## Node.JS
 
@@ -100,3 +101,46 @@ Salir de MariaDB CLI.
 exit;
 ```
 
+## Grafana
+
+Instala Grafana con los siguientes comandos.
+
+```
+sudo apt update
+sudo apt install -y apt-transport-https software-properties-common wget
+```
+
+Agrega la clave GPG.
+```
+sudo mkdir -p /etc/apt/keyrings
+wget -q -O - https://apt.grafana.com/gpg.key | sudo tee /etc/apt/keyrings/grafana.key > /dev/null
+```
+
+Agrega el repositorio-
+```
+echo "deb [signed-by=/etc/apt/keyrings/grafana.key] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
+```
+
+Actualiza.
+```
+sudo apt update
+```
+
+Instala Grafana
+```
+sudo apt install -y grafana
+```
+
+Habilita el inicio automático de Grafana
+```
+sudo systemctl daemon-reload
+sudo systemctl enable grafana-server
+sudo systemctl start grafana-server
+```
+
+Verifica que esté funcionando.
+```
+systemctl status grafana-server
+```
+
+Abre Grafana desde un navegador en la Raspberry Pi en `127.0.0.1:3000` e inicia sesión con el usuario `admin` y la contraseña `admin`. Te pedirá que cambies la contraseña, escribe `barredura`.
