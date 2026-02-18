@@ -12,6 +12,7 @@ Se requiere el siguiente Hardware
 - Power Bank
 - Ramps
 - Sistema de dibujo
+- Sensor ENS 160 + AHT2X
 
 ## Software
 
@@ -19,5 +20,8 @@ Se requiere lo siguiente
 
 - Raspberry Pi Imager
 - Raspberry Pi OS Trixie
+- Node.JS
+- Node-Red
 - Maria DB
 - Grafana
+- Mosqutto

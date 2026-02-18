@@ -19,6 +19,7 @@ Se requiere contar con lo siguiente:
 - Node-Red
 - MariaDB Server
 - Grafana
+- Mosquitto
 
 ## Node.JS
 
@@ -144,3 +145,50 @@ systemctl status grafana-server
 ```
 
 Abre Grafana desde un navegador en la Raspberry Pi en `127.0.0.1:3000` e inicia sesión con el usuario `admin` y la contraseña `admin`. Te pedirá que cambies la contraseña, escribe `barredura`.
+
+## Mosquitto
+
+Instala Grafana con los siguientes comandos.
+```
+sudo apt update
+sudo apt upgrade -y
+```
+
+Instala Mosquitto.
+```
+sudo apt install mosquitto mosquitto-clients -y
+```
+
+Habilita el inicio de mosquitt con el sistema.
+```
+sudo systemctl enable mosquitto
+sudo systemctl start mosquitto
+```
+
+Comprueba que este funcionando.
+```
+sudo systemctl status mosquitto
+```
+
+Realiza una prueba. 
+
+Ejecuta en una terminal el siguiente comando para suscribirte a un tema `mosquitto_sub -h localhost -t prueba`y en otra terminal ejecuta el siguiente comando para enviar un mensane `mosquitto_pub -h localhost -t prueba -m "hola mosquitto"`. Debrás recibir el mensaje en la primer terminal.
+
+Edita el archivo de configuraciones para recibir conexiones externas.
+```
+sudo nano /etc/mosquitto/conf.d/default.conf
+```
+
+Coloca el siguiente contenido.
+```
+allow_anonymous false
+password_file /etc/mosquitto/passwd
+listener 1883 0.0.0.0
+```
+
+Reinicia Mosquitto.
+```
+sudo systemctl restart mosquitto
+```
+
+Ahora puedes recibir mensajes externos.
