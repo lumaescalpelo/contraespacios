@@ -128,3 +128,30 @@ Salir de MariaDB CLI.
 ```
 exit;
 ```
+
+## Consulta
+
+Puedes consultar los ultimos valores de la tabla de la siguiente forma.
+
+Entra a MariaDB
+```
+mysql -u cinema -p ambiente
+```
+La contraseña es `barredura`
+
+Ver las tablas.
+```
+SHOW TABLES;
+```
+
+Ver las últimas filas guardadas.
+```
+SELECT * FROM registros_ambiente
+ORDER BY id DESC
+LIMIT 10;
+```
+
+Salir de MariaDB.
+```
+EXIT;
+```
