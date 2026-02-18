@@ -74,6 +74,12 @@ journalctl -u nodered -f
 
 Comprobar que todo quedó correcto reiniciando la Raspberry Pi y visitando `http://127.0.0.1:1880/`
 
+### Nodos externos
+Para instalar los nodos externos, dirigete a Manage Palette y en la sección install, busca e instala los siguientes nodos.
+
+- @flowfuse/node-red-dashboard.
+- node-red-node-mysql
+
 ## MariaDB
 
 Instalar María DB Server con los siguientes comandos.

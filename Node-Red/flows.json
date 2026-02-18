@@ -1,0 +1,675 @@
+[
+    {
+        "id": "667a0688cf638cfb",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "33e9eef147f4deec",
+        "type": "mqtt in",
+        "z": "667a0688cf638cfb",
+        "name": "",
+        "topic": "ambiente/lectura",
+        "qos": "2",
+        "datatype": "auto-detect",
+        "broker": "b5bdbf04c15594bf",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 140,
+        "y": 120,
+        "wires": [
+            [
+                "95931c1b51f3d052",
+                "fa9c96cb31d2381f",
+                "d61580fb45ccec0c"
+            ]
+        ]
+    },
+    {
+        "id": "95931c1b51f3d052",
+        "type": "debug",
+        "z": "667a0688cf638cfb",
+        "name": "debug 1",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 380,
+        "y": 120,
+        "wires": []
+    },
+    {
+        "id": "3955d03c4bfc39f5",
+        "type": "comment",
+        "z": "667a0688cf638cfb",
+        "name": "Recibir Datos",
+        "info": "",
+        "x": 130,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "9565a9b59236bc25",
+        "type": "ui-gauge",
+        "z": "667a0688cf638cfb",
+        "name": "Temperatura",
+        "group": "234fe54ad600bc36",
+        "order": 1,
+        "value": "payload.temperatura",
+        "valueType": "msg",
+        "width": "2",
+        "height": "3",
+        "gtype": "gauge-half",
+        "gstyle": "needle",
+        "title": "Temperatura",
+        "alwaysShowTitle": false,
+        "floatingTitlePosition": "top-left",
+        "units": "°C",
+        "icon": "",
+        "prefix": "",
+        "suffix": "",
+        "segments": [
+            {
+                "from": "-15",
+                "color": "#1a5fb4",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "0",
+                "color": "#3584e4",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "15",
+                "color": "#33d17a",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "30",
+                "color": "#f8e45c",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "35",
+                "color": "#f66151",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "40",
+                "color": "#e01b24",
+                "text": "",
+                "textType": "label"
+            }
+        ],
+        "min": "-15",
+        "max": "45",
+        "sizeThickness": 16,
+        "sizeGap": 4,
+        "sizeKeyThickness": 8,
+        "styleRounded": true,
+        "styleGlow": false,
+        "className": "",
+        "x": 610,
+        "y": 240,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "94c6a605a9554da2",
+        "type": "ui-gauge",
+        "z": "667a0688cf638cfb",
+        "name": "Humedad",
+        "group": "234fe54ad600bc36",
+        "order": 2,
+        "value": "payload.humedad",
+        "valueType": "msg",
+        "width": "2",
+        "height": "3",
+        "gtype": "gauge-half",
+        "gstyle": "needle",
+        "title": "RH",
+        "alwaysShowTitle": false,
+        "floatingTitlePosition": "top-left",
+        "units": "%",
+        "icon": "",
+        "prefix": "",
+        "suffix": "",
+        "segments": [
+            {
+                "from": "0",
+                "color": "#9a9996",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "20",
+                "color": "#986a44",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "30",
+                "color": "#f6d32d",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "60",
+                "color": "#33d17a",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "80",
+                "color": "#99c1f1",
+                "text": "",
+                "textType": "label"
+            },
+            {
+                "from": "90",
+                "color": "#1a5fb4",
+                "text": "",
+                "textType": "label"
+            }
+        ],
+        "min": 0,
+        "max": "100",
+        "sizeThickness": 16,
+        "sizeGap": 4,
+        "sizeKeyThickness": 8,
+        "styleRounded": true,
+        "styleGlow": false,
+        "className": "",
+        "x": 600,
+        "y": 300,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "fa9c96cb31d2381f",
+        "type": "function",
+        "z": "667a0688cf638cfb",
+        "name": "To Int",
+        "func": "// Tomar payload original\nlet p = msg.payload || {};\n\n// Crear objeto con enteros o null\nlet datos = {\n    temperatura: p.temperatura != null ? Math.round(p.temperatura) : null,\n    humedad:     p.humedad     != null ? Math.round(p.humedad)     : null,\n    aqi:         p.aqi         != null ? Math.round(p.aqi)         : null,\n    tvoc:        p.tvoc        != null ? Math.round(p.tvoc)        : null,\n    eco2:        p.eco2        != null ? Math.round(p.eco2)        : null\n};\n\n// Guardar en contexto GLOBAL\nglobal.set(\"ultimo_sensor\", datos);\n\n// No necesitamos cambiar msg.payload aquí,\n// porque este flujo solo prepara estado para después.\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 370,
+        "y": 180,
+        "wires": [
+            [
+                "94c6a605a9554da2",
+                "9565a9b59236bc25",
+                "b38ac71e893ecedc",
+                "8628c520d40e313b",
+                "096e0fa31c70f984"
+            ]
+        ]
+    },
+    {
+        "id": "b38ac71e893ecedc",
+        "type": "ui-text",
+        "z": "667a0688cf638cfb",
+        "group": "234fe54ad600bc36",
+        "order": 5,
+        "width": "1",
+        "height": "1",
+        "name": "AQI",
+        "label": "AQI",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "style": false,
+        "font": "",
+        "fontSize": 16,
+        "color": "#717171",
+        "wrapText": false,
+        "className": "",
+        "value": "payload.aqi",
+        "valueType": "msg",
+        "x": 590,
+        "y": 360,
+        "wires": []
+    },
+    {
+        "id": "8628c520d40e313b",
+        "type": "ui-text",
+        "z": "667a0688cf638cfb",
+        "group": "234fe54ad600bc36",
+        "order": 3,
+        "width": "1",
+        "height": "1",
+        "name": "TVOC",
+        "label": "TVOC",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "style": false,
+        "font": "",
+        "fontSize": 16,
+        "color": "#717171",
+        "wrapText": false,
+        "className": "",
+        "value": "payload.tvoc",
+        "valueType": "msg",
+        "x": 590,
+        "y": 420,
+        "wires": []
+    },
+    {
+        "id": "096e0fa31c70f984",
+        "type": "ui-text",
+        "z": "667a0688cf638cfb",
+        "group": "234fe54ad600bc36",
+        "order": 4,
+        "width": "1",
+        "height": "1",
+        "name": "eCO2",
+        "label": "eCO2",
+        "format": "{{msg.payload}}",
+        "layout": "row-left",
+        "style": false,
+        "font": "",
+        "fontSize": 16,
+        "color": "#717171",
+        "wrapText": false,
+        "className": "",
+        "value": "payload.eco2",
+        "valueType": "msg",
+        "x": 590,
+        "y": 480,
+        "wires": []
+    },
+    {
+        "id": "c216c344d72ab192",
+        "type": "mysql",
+        "z": "667a0688cf638cfb",
+        "mydb": "aa49f97a5a6884dc",
+        "name": "MariaDB",
+        "x": 1560,
+        "y": 580,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "f0b85a10a9aa57af",
+        "type": "function",
+        "z": "667a0688cf638cfb",
+        "name": "To MariaDB",
+        "func": "// Leer datos guardados en global\nconst sensor = global.get(\"ultimo_sensor\") || {};\nconst lugar  = global.get(\"lugar_actual\") || null;\nconst notas  = global.get(\"Notas\") || null;   // ← NUEVO\n\n// Nombre de foto: preferimos msg.foto_nombre, si no existe usamos global o null\nconst fotoNombre = msg.foto_nombre || global.get(\"foto_nombre\") || null;\n\n// Dispositivo (ajústalo a tu gusto)\nconst dispositivo = \"esp32-aire-01\";\n\n// Extraer valores (pueden ser null)\nconst temperatura = (sensor.temperatura !== undefined) ? sensor.temperatura : null;\nconst humedad     = (sensor.humedad     !== undefined) ? sensor.humedad     : null;\nconst aqi         = (sensor.aqi         !== undefined) ? sensor.aqi         : null;\nconst tvoc        = (sensor.tvoc        !== undefined) ? sensor.tvoc        : null;\nconst eco2        = (sensor.eco2        !== undefined) ? sensor.eco2        : null;\n\n// Validez: 1 si vienen todos, 0 si falta algo importante\nconst valido =\n  (temperatura !== null && humedad !== null && aqi !== null && tvoc !== null && eco2 !== null)\n    ? 1\n    : 0;\n\n// Query parametrizado para el nodo mysql\nmsg.topic = `\nINSERT INTO registros_ambiente\n(dispositivo, lugar, archivo_nombre, temperatura, humedad, aqi, tvoc, eco2, valido, notas)\nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n`;\n\n// Payload = array de parámetros en el orden del query\nmsg.payload = [\n  dispositivo,\n  lugar,\n  fotoNombre,\n  temperatura,\n  humedad,\n  aqi,\n  tvoc,\n  eco2,\n  valido,\n  notas           // ← NUEVO\n];\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1310,
+        "y": 580,
+        "wires": [
+            [
+                "c216c344d72ab192"
+            ]
+        ]
+    },
+    {
+        "id": "0712cf59f9f6caa3",
+        "type": "ui-text-input",
+        "z": "667a0688cf638cfb",
+        "group": "21389756e5510336",
+        "name": "Lugar",
+        "label": "Lugar",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "topic": "lugar",
+        "topicType": "msg",
+        "mode": "text",
+        "tooltip": "",
+        "delay": 300,
+        "passthru": true,
+        "sendOnDelay": false,
+        "sendOnBlur": true,
+        "sendOnEnter": true,
+        "className": "",
+        "clearable": false,
+        "sendOnClear": false,
+        "icon": "",
+        "iconPosition": "left",
+        "iconInnerPosition": "inside",
+        "x": 110,
+        "y": 680,
+        "wires": [
+            [
+                "67ba96e7127f9c16"
+            ]
+        ]
+    },
+    {
+        "id": "3438035840ca7796",
+        "type": "http request",
+        "z": "667a0688cf638cfb",
+        "name": "",
+        "method": "GET",
+        "ret": "bin",
+        "paytoqs": "ignore",
+        "url": "192.168.1.117/capture",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 610,
+        "y": 580,
+        "wires": [
+            [
+                "966dab279fb3f790"
+            ]
+        ]
+    },
+    {
+        "id": "d61580fb45ccec0c",
+        "type": "function",
+        "z": "667a0688cf638cfb",
+        "name": "Set IMG",
+        "func": "const folder = \"/home/pi/imagenes\";\n\nfunction pad(n){ return (n < 10) ? \"0\" + n : \"\" + n; }\n\nconst d = new Date();\n\n// Timestamp legible para nombre de archivo\nconst ts =\n  d.getFullYear() + \"-\" +\n  pad(d.getMonth() + 1) + \"-\" +\n  pad(d.getDate()) + \"_\" +\n  pad(d.getHours()) + \"-\" +\n  pad(d.getMinutes()) + \"-\" +\n  pad(d.getSeconds());\n\n// Guardar rutas en el mensaje\nmsg.filename = `${folder}/${ts}.jpg`;\nmsg.foto_nombre = `${ts}.jpg`;\n\n// También puedes guardar el nombre por comodidad\nglobal.set(\"foto_nombre\", msg.foto_nombre);\n\n// -----------------------\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 380,
+        "y": 580,
+        "wires": [
+            [
+                "3438035840ca7796"
+            ]
+        ]
+    },
+    {
+        "id": "966dab279fb3f790",
+        "type": "file",
+        "z": "667a0688cf638cfb",
+        "name": "",
+        "filename": "filename",
+        "filenameType": "msg",
+        "appendNewline": true,
+        "createDir": true,
+        "overwriteFile": "true",
+        "encoding": "none",
+        "x": 860,
+        "y": 580,
+        "wires": [
+            [
+                "6afa46e62bfd6d7c"
+            ]
+        ]
+    },
+    {
+        "id": "6afa46e62bfd6d7c",
+        "type": "delay",
+        "z": "667a0688cf638cfb",
+        "name": "",
+        "pauseType": "delay",
+        "timeout": "1",
+        "timeoutUnits": "seconds",
+        "rate": "1",
+        "nbRateUnits": "1",
+        "rateUnits": "second",
+        "randomFirst": "1",
+        "randomLast": "5",
+        "randomUnits": "seconds",
+        "drop": false,
+        "allowrate": false,
+        "outputs": 1,
+        "x": 1080,
+        "y": 580,
+        "wires": [
+            [
+                "f0b85a10a9aa57af"
+            ]
+        ]
+    },
+    {
+        "id": "67ba96e7127f9c16",
+        "type": "function",
+        "z": "667a0688cf638cfb",
+        "name": "function 1",
+        "func": "// Valor escrito por el usuario en el text input\nlet lugar = (msg.payload || \"\").toString().trim();\n\n// Si está vacío, puedes decidir:\n// - guardar null\n// - o mantener el anterior\n// Aquí guardaremos null si está vacío.\nif (lugar.length === 0) {\n    lugar = null;\n}\n\n// Guardar en contexto global\nglobal.set(\"lugar_actual\", lugar);\n\n// Pasar el mensaje sin modificar mucho\nmsg.lugar = lugar;\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 380,
+        "y": 680,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "e70209a86d1f8d7d",
+        "type": "ui-text-input",
+        "z": "667a0688cf638cfb",
+        "group": "21389756e5510336",
+        "name": "Notas",
+        "label": "Notas",
+        "order": 0,
+        "width": 0,
+        "height": 0,
+        "topic": "notas",
+        "topicType": "msg",
+        "mode": "text",
+        "tooltip": "",
+        "delay": 300,
+        "passthru": true,
+        "sendOnDelay": false,
+        "sendOnBlur": true,
+        "sendOnEnter": true,
+        "className": "",
+        "clearable": false,
+        "sendOnClear": false,
+        "icon": "",
+        "iconPosition": "left",
+        "iconInnerPosition": "inside",
+        "x": 110,
+        "y": 740,
+        "wires": [
+            [
+                "bc156f0cfa2a0dea"
+            ]
+        ]
+    },
+    {
+        "id": "bc156f0cfa2a0dea",
+        "type": "function",
+        "z": "667a0688cf638cfb",
+        "name": "function 2",
+        "func": "// Valor escrito por el usuario en el text input\nlet notas = (msg.payload || \"\").toString().trim();\n\n// Si está vacío, puedes decidir:\n// - guardar null\n// - o mantener el anterior\n// Aquí guardaremos null si está vacío.\nif (notas.length === 0) {\n    notas = null;\n}\n\n// Guardar en contexto global\nglobal.set(\"Notas\", notas);\n\n// Pasar el mensaje sin modificar mucho\nmsg.notas = notas;\n\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 380,
+        "y": 740,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "b5bdbf04c15594bf",
+        "type": "mqtt-broker",
+        "name": "localbroker",
+        "broker": "localhost",
+        "port": 1883,
+        "clientid": "",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": 4,
+        "keepalive": 60,
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "234fe54ad600bc36",
+        "type": "ui-group",
+        "name": "Sensor",
+        "page": "0f0eaccb5697e91f",
+        "width": 6,
+        "height": 1,
+        "order": 2,
+        "showTitle": true,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "aa49f97a5a6884dc",
+        "type": "MySQLdatabase",
+        "name": "Ambiente",
+        "host": "127.0.0.1",
+        "port": "3306",
+        "db": "ambiente",
+        "tz": "",
+        "charset": "UTF8"
+    },
+    {
+        "id": "21389756e5510336",
+        "type": "ui-group",
+        "name": "Configuración",
+        "page": "0f0eaccb5697e91f",
+        "width": 6,
+        "height": 1,
+        "order": 1,
+        "showTitle": true,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "0f0eaccb5697e91f",
+        "type": "ui-page",
+        "name": "Cinemabarredura",
+        "ui": "d7ee8f3970d99b29",
+        "path": "/page1",
+        "icon": "home",
+        "layout": "grid",
+        "theme": "a87e00aa85618721",
+        "breakpoints": [
+            {
+                "name": "Default",
+                "px": "0",
+                "cols": "3"
+            },
+            {
+                "name": "Tablet",
+                "px": "576",
+                "cols": "6"
+            },
+            {
+                "name": "Small Desktop",
+                "px": "768",
+                "cols": "9"
+            },
+            {
+                "name": "Desktop",
+                "px": "1024",
+                "cols": "12"
+            }
+        ],
+        "order": 1,
+        "className": "",
+        "visible": "true",
+        "disabled": "false"
+    },
+    {
+        "id": "d7ee8f3970d99b29",
+        "type": "ui-base",
+        "name": "UI-Base",
+        "path": "/dashboard",
+        "appIcon": "",
+        "includeClientData": true,
+        "acceptsClientConfig": [
+            "ui-notification",
+            "ui-control"
+        ],
+        "showPathInSidebar": false,
+        "headerContent": "page",
+        "navigationStyle": "default",
+        "titleBarStyle": "default",
+        "showReconnectNotification": true,
+        "notificationDisplayTime": 1,
+        "showDisconnectNotification": true,
+        "allowInstall": false
+    },
+    {
+        "id": "a87e00aa85618721",
+        "type": "ui-theme",
+        "name": "Default Theme",
+        "colors": {
+            "surface": "#ffffff",
+            "primary": "#0094CE",
+            "bgPage": "#eeeeee",
+            "groupBg": "#ffffff",
+            "groupOutline": "#cccccc"
+        },
+        "sizes": {
+            "density": "default",
+            "pagePadding": "12px",
+            "groupGap": "12px",
+            "groupBorderRadius": "4px",
+            "widgetGap": "12px"
+        }
+    },
+    {
+        "id": "f106a88874cc6067",
+        "type": "global-config",
+        "env": [],
+        "modules": {
+            "@flowfuse/node-red-dashboard": "1.30.2",
+            "node-red-node-mysql": "3.0.0"
+        }
+    }
+]
