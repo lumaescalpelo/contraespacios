@@ -76,12 +76,50 @@ Verifica la existencia de la base.
 SHOW DATABASES LIKE 'ambiente';
 ```
 
+Verás algo como lo siguiente.
+```
++---------------------+
+| Database (ambiente) |
++---------------------+
+| ambiente            |
++---------------------+
+```
+
 Ve la tabla.
 ```
 SHOW DATABASES LIKE 'ambiente';
 ```
 
+Verás algo como lo siguiente.
+```
++--------------------+
+| Tables_in_ambiente |
++--------------------+
+| registros_ambiente |
++--------------------+
+```
+
 Ve la estructura.
 ```
 DESCRIBE ambiente.registros_ambiente;
+```
+
+Verás algo como lo siguiente.
+```
++----------------+---------------------+------+-----+----------------------+----------------+
+| Field          | Type                | Null | Key | Default              | Extra          |
++----------------+---------------------+------+-----+----------------------+----------------+
+| id             | bigint(20) unsigned | NO   | PRI | NULL                 | auto_increment |
+| ts             | datetime(3)         | NO   | MUL | current_timestamp(3) |                |
+| dispositivo    | varchar(32)         | YES  | MUL | NULL                 |                |
+| lugar          | varchar(128)        | YES  | MUL | NULL                 |                |
+| archivo_nombre | varchar(255)        | YES  |     | NULL                 |                |
+| temperatura    | decimal(6,2)        | YES  |     | NULL                 |                |
+| humedad        | decimal(6,2)        | YES  |     | NULL                 |                |
+| aqi            | tinyint(3) unsigned | YES  |     | NULL                 |                |
+| tvoc           | int(10) unsigned    | YES  |     | NULL                 |                |
+| eco2           | int(10) unsigned    | YES  |     | NULL                 |                |
+| valido         | tinyint(1)          | YES  |     | NULL                 |                |
+| notas          | varchar(255)        | YES  |     | NULL                 |                |
++----------------+---------------------+------+-----+----------------------+----------------+
 ```

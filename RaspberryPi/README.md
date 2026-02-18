@@ -81,10 +81,12 @@ sudo apt update
 sudo apt install -y mariadb-server
 ```
 
+
 Comprobar que el servicio funciona.
 ```
 sudo systemctl status mariadb
 ```
+
 
 Comprobar entrando al CLI de MariaDB
 ```
