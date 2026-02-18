@@ -17,6 +17,7 @@ Se requiere contar con lo siguiente:
 
 - Node.JS
 - Node-Red
+- MariaDB Server
 
 ## Node.JS
 
@@ -70,3 +71,30 @@ journalctl -u nodered -f
 ```
 
 Comprobar que todo quedó correcto reiniciando la Raspberry Pi y visitando `http://127.0.0.1:1880/`
+
+## MariaDB
+
+Instalar María DB Server con los siguientes comandos.
+
+```
+sudo apt update
+sudo apt install -y mariadb-server
+```
+
+Comprobar que el servicio funciona.
+```
+sudo systemctl status mariadb
+```
+
+Comprobar entrando al CLI de MariaDB
+```
+sudo mysql -u root -p
+```
+
+Debe verse algo como `MariaDB [(none)]>`
+
+Salir de MariaDB CLI.
+```
+exit;
+```
+
