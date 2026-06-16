@@ -18,41 +18,24 @@ Ruta esperada:
 
 ## 1. Qué corrige esta versión
 
-Esta versión corrige la forma de ejecución y la forma de controlar la pantalla.
-
-### 1.1 Ejecución desde Home
-
-El programa está pensado para ejecutarse desde `Home` usando la ruta completa:
+Esta versión vuelve a la forma normal de trabajo:
 
 ```bash
-python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py
+cd ~/Documents/GitHub/contraespacios/OLED
+source .venv/bin/activate
+python3 oled-test.py
 ```
 
-No depende de que estés parada dentro de la carpeta `OLED`. Por fin, una pequeña victoria contra las rutas relativas, esa plaga elegante.
+Nada de ejecutar desde Home con una ruta larguísima como si estuviéramos invocando un demonio administrativo. Eso solo hizo más molesto lo que debía ser simple.
 
-### 1.2 Pantalla OLED
+También se corrige el control de pantalla:
 
-La pantalla se controla con un driver directo para **SH1107 128x96**.
-
-Esto evita tratarla como una `ssd1306` genérica, que en esta pantalla puede provocar:
-
-- ruido visual,
-- texto roto,
-- imagen corrida,
-- errores I2C,
-- comportamiento inestable.
-
-### 1.3 Botones
-
-Los botones ya no escriben directo a la pantalla desde callbacks de `gpiozero`.
-
-Ahora:
-
-```text
-botón -> evento -> cola -> loop principal -> OLED
-```
-
-Esto evita que los hilos de `gpiozero` intenten escribir al bus I2C al mismo tiempo.
+- se usa un driver directo para **SH1107 128x96**,
+- el texto se dibuja desde la esquina superior izquierda,
+- se limpia toda la memoria interna antes de dibujar,
+- se usa `page_offset=4` por defecto,
+- los botones ya no escriben directo a la pantalla desde callbacks,
+- los botones mandan eventos a una cola y el loop principal actualiza la OLED.
 
 ---
 
@@ -158,29 +141,30 @@ Dibujo
 
 ---
 
-## 5. Instalar dependencias desde Home
+## 5. Instalar dependencias
 
-### 5.1 Instalar paquetes del sistema
+Entrar a la carpeta:
 
-Desde Home:
+```bash
+cd ~/Documents/GitHub/contraespacios/OLED
+```
+
+Instalar paquetes del sistema:
 
 ```bash
 sudo apt update
 sudo apt install -y python3-lgpio python3-gpiozero python3-pil python3-smbus i2c-tools
 ```
 
-### 5.2 Crear entorno virtual con paquetes del sistema
-
-Desde Home:
+Crear entorno virtual con paquetes del sistema:
 
 ```bash
-cd ~/Documents/GitHub/contraespacios/OLED
 rm -rf .venv
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 ```
 
-### 5.3 Instalar dependencias Python
+Instalar dependencias Python dentro del entorno:
 
 ```bash
 pip install pillow smbus2
@@ -191,8 +175,6 @@ Nota: `gpiozero`, `lgpio` y `PIL` pueden venir desde los paquetes del sistema gr
 ---
 
 ## 6. Activar I2C
-
-Desde Home:
 
 ```bash
 sudo raspi-config
@@ -213,8 +195,6 @@ sudo reboot
 ---
 
 ## 7. Confirmar que la pantalla aparece
-
-Desde Home:
 
 ```bash
 i2cdetect -y 1
@@ -237,61 +217,77 @@ Si no aparece:
 
 ---
 
-## 8. Ejecutar programa desde Home
+## 8. Ejecutar programa
 
-Activar entorno:
-
-```bash
-source ~/Documents/GitHub/contraespacios/OLED/.venv/bin/activate
-```
-
-Ejecutar usando ruta completa:
+Forma normal:
 
 ```bash
-python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py
+cd ~/Documents/GitHub/contraespacios/OLED
+source .venv/bin/activate
+python3 oled-test.py
 ```
-
-Este es el comando recomendado.
 
 ---
 
 ## 9. Ejecutar en consola sin OLED
 
-Esto sirve para probar botones aunque la pantalla esté fallando:
+Esto sirve para confirmar botones aunque la pantalla esté fallando:
 
 ```bash
-source ~/Documents/GitHub/contraespacios/OLED/.venv/bin/activate
-python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py --display console
+cd ~/Documents/GitHub/contraespacios/OLED
+source .venv/bin/activate
+python3 oled-test.py --display console
 ```
 
 ---
 
-## 10. Ajustes si la imagen aparece corrida
+## 10. Probar alineación de pantalla
 
-Si la pantalla prende pero la imagen aparece corrida, prueba offsets.
+Esta versión usa por defecto:
 
-### Offset de columna
-
-```bash
-python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py --column-offset 2
+```text
+page_offset = 4
+column_offset = 0
 ```
 
-También puedes probar:
+Para probar pantalla de alineación:
 
 ```bash
-python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py --column-offset 4
+python3 oled-test.py --screen-test
 ```
 
-### Offset de página
+Si el texto aparece demasiado abajo o al centro, prueba:
 
 ```bash
-python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py --page-offset 1
+python3 oled-test.py --screen-test --page-offset 0
 ```
 
-### Rotar 180 grados
+```bash
+python3 oled-test.py --screen-test --page-offset 2
+```
 
 ```bash
-python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py --rotate-180
+python3 oled-test.py --screen-test --page-offset 4
+```
+
+```bash
+python3 oled-test.py --screen-test --page-offset 6
+```
+
+Si la imagen está corrida a la izquierda o derecha:
+
+```bash
+python3 oled-test.py --screen-test --column-offset 2
+```
+
+```bash
+python3 oled-test.py --screen-test --column-offset 4
+```
+
+Si está invertida:
+
+```bash
+python3 oled-test.py --rotate-180
 ```
 
 ---
@@ -414,7 +410,8 @@ Ctrl+C
 - [x] OLED en GPIO2/GPIO3.
 - [x] Botones en GPIO17, GPIO27, GPIO22, GPIO23, GPIO24.
 - [x] Mapeo de botones de izquierda a derecha.
-- [x] Driver directo SH1107 128x96 por defecto.
+- [x] Driver directo SH1107 128x96.
+- [x] `page_offset=4` por defecto.
 - [x] Uso de LGPIOFactory.
 - [x] Cola de eventos para no escribir OLED desde callbacks.
 - [x] Menú de prueba.

@@ -6,21 +6,24 @@ Contra Espacios - oled-test.py
 
 Prueba de pantalla OLED I2C + 5 botones para Raspberry Pi.
 
-Pensado para ejecutarse desde Home así:
+Forma normal de ejecución:
 
-  source ~/Documents/GitHub/contraespacios/OLED/.venv/bin/activate
-  python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py
+  cd ~/Documents/GitHub/contraespacios/OLED
+  source .venv/bin/activate
+  python3 oled-test.py
 
 Pantalla:
   OLED I2C en GPIO2 / GPIO3.
-  Driver directo SH1107 128x96 por defecto.
+  Control directo SH1107 128x96.
+  Default: page offset 4, porque muchas OLED SH1107 128x96 usan memoria interna
+  de 128x128 y la zona visible empieza más abajo en la RAM del controlador.
 
 Botones, de izquierda a derecha, empezando en pin físico 11:
   Botón 1: pin físico 11 / GPIO17 -> Arriba / anterior
   Botón 2: pin físico 13 / GPIO27 -> Abajo / siguiente
   Botón 3: pin físico 15 / GPIO22 -> Seleccionar
   Botón 4: pin físico 16 / GPIO23 -> Volver
-  Botón 5: pin físico 18 / GPIO24 -> Estado / acción rápida
+  Botón 5: pin físico 18 / GPIO24 -> Estado
 
 Este es un programa de prueba:
   - No captura fotos reales.
@@ -47,17 +50,21 @@ from PIL import Image, ImageDraw, ImageFont
 # Pines
 # ---------------------------------------------------------------------
 
-# Botones físicos de izquierda a derecha, empezando en pin físico 11.
-PIN_BUTTON_1 = 17  # Físico 11
-PIN_BUTTON_2 = 27  # Físico 13
-PIN_BUTTON_3 = 22  # Físico 15
-PIN_BUTTON_4 = 23  # Físico 16
-PIN_BUTTON_5 = 24  # Físico 18
+PIN_BUTTON_1 = 17  # Pin físico 11
+PIN_BUTTON_2 = 27  # Pin físico 13
+PIN_BUTTON_3 = 22  # Pin físico 15
+PIN_BUTTON_4 = 23  # Pin físico 16
+PIN_BUTTON_5 = 24  # Pin físico 18
 
 OLED_I2C_BUS = 1
 OLED_I2C_ADDRESS = 0x3C
 OLED_WIDTH = 128
 OLED_HEIGHT = 96
+
+# Muchas OLED SH1107 128x96 usan GDDRAM de 128x128.
+# La zona visible suele empezar en la página 4.
+DEFAULT_PAGE_OFFSET = 4
+DEFAULT_COLUMN_OFFSET = 0
 
 
 # ---------------------------------------------------------------------
@@ -95,12 +102,7 @@ events: "queue.Queue[str]" = queue.Queue()
 # ---------------------------------------------------------------------
 
 def get_pin_factory():
-    """
-    Usa LGPIOFactory de forma explícita.
-
-    En Raspberry Pi OS moderno, gpiozero necesita un backend GPIO funcional.
-    Sin lgpio puede caer al backend NativeFactory/sysfs y romperse.
-    """
+    """Usa LGPIOFactory de forma explícita en Raspberry Pi OS moderno."""
     try:
         from gpiozero.pins.lgpio import LGPIOFactory
         return LGPIOFactory()
@@ -123,9 +125,9 @@ class SH1107Direct:
     """
     Driver mínimo directo para OLED SH1107 128x96 por I2C.
 
-    Se evita luma.oled porque algunas pantallas 128x96 se ven con ruido o texto
-    roto cuando se controlan como SSD1306, y porque conviene tener control más
-    directo mientras se prueba el hardware.
+    Este driver escribe la imagen en páginas de 8 pixeles. Por defecto empieza
+    en page_offset=4 para corregir módulos 128x96 que internamente tienen RAM
+    128x128 y muestran una ventana de 96 px.
     """
 
     def __init__(
@@ -134,9 +136,10 @@ class SH1107Direct:
         address: int = OLED_I2C_ADDRESS,
         width: int = OLED_WIDTH,
         height: int = OLED_HEIGHT,
-        column_offset: int = 0,
-        page_offset: int = 0,
+        column_offset: int = DEFAULT_COLUMN_OFFSET,
+        page_offset: int = DEFAULT_PAGE_OFFSET,
         rotate_180: bool = False,
+        contrast: int = 0x7F,
     ):
         from smbus2 import SMBus
 
@@ -148,6 +151,7 @@ class SH1107Direct:
         self.column_offset = column_offset
         self.page_offset = page_offset
         self.rotate_180 = rotate_180
+        self.contrast = max(0, min(255, int(contrast)))
         self.bus = SMBus(bus)
         self.init_display()
 
@@ -156,10 +160,7 @@ class SH1107Direct:
             self.bus.write_byte_data(self.address, 0x00, cmd & 0xFF)
 
     def data_block(self, data: list[int]) -> None:
-        """
-        Envía datos en bloques pequeños. Algunos adaptadores I2C se ponen
-        dramáticos con bloques grandes. Qué sorpresa: otro límite invisible.
-        """
+        # Bloques pequeños para evitar errores I2C en algunas pantallas.
         block_size = 16
         for i in range(0, len(data), block_size):
             self.bus.write_i2c_block_data(
@@ -169,31 +170,38 @@ class SH1107Direct:
             )
 
     def init_display(self) -> None:
-        # Secuencia estable para SH1107 128x96.
         self.command(0xAE)        # Display OFF
-        self.command(0xD5, 0x50)  # Clock
-        self.command(0xA8, 0x5F)  # Multiplex ratio: 96 - 1
+        self.command(0xD5, 0x50)  # Clock divide
+        self.command(0xA8, 0x7F)  # Multiplex ratio para RAM 128 líneas
         self.command(0xD3, 0x00)  # Display offset
-        self.command(0x40)        # Start line
+        self.command(0x40)        # Display start line
 
-        # DC-DC / charge pump para SH1107.
+        # DC-DC / charge pump SH1107
         self.command(0xAD, 0x8B)
 
         if self.rotate_180:
-            self.command(0xA0)    # Segment remap normal
-            self.command(0xC0)    # COM scan normal
+            self.command(0xA0)
+            self.command(0xC0)
         else:
-            self.command(0xA1)    # Segment remap
-            self.command(0xC8)    # COM scan dec
+            self.command(0xA1)
+            self.command(0xC8)
 
-        self.command(0xDA, 0x12)  # COM pins
-        self.command(0x81, 0x80)  # Contrast
-        self.command(0xD9, 0x1F)  # Pre-charge
-        self.command(0xDB, 0x35)  # VCOM deselect
-        self.command(0xA4)        # Resume display from RAM
-        self.command(0xA6)        # Normal display
-        self.command(0xAF)        # Display ON
+        self.command(0xDA, 0x12)          # COM pins
+        self.command(0x81, self.contrast) # Contrast
+        self.command(0xD9, 0x1F)          # Pre-charge
+        self.command(0xDB, 0x35)          # VCOM deselect
+        self.command(0xA4)                # Resume from RAM
+        self.command(0xA6)                # Normal display
+        self.command(0xAF)                # Display ON
+        self.clear_all_memory()
         self.clear()
+
+    def clear_all_memory(self) -> None:
+        # Limpia las 16 páginas internas para evitar basura visual anterior.
+        blank = [0x00] * self.width
+        for page in range(16):
+            self.set_raw_page(page)
+            self.data_block(blank)
 
     def clear(self) -> None:
         blank = [0x00] * self.width
@@ -201,12 +209,15 @@ class SH1107Direct:
             self.set_page(page)
             self.data_block(blank)
 
-    def set_page(self, page: int) -> None:
-        page_addr = 0xB0 + self.page_offset + page
+    def set_raw_page(self, raw_page: int) -> None:
         col = self.column_offset
-        self.command(page_addr)
+        self.command(0xB0 + raw_page)
         self.command(0x00 + (col & 0x0F))
         self.command(0x10 + ((col >> 4) & 0x0F))
+
+    def set_page(self, page: int) -> None:
+        raw_page = self.page_offset + page
+        self.set_raw_page(raw_page)
 
     def display_image(self, image: Image.Image) -> None:
         image = image.convert("1")
@@ -214,7 +225,6 @@ class SH1107Direct:
         if self.rotate_180:
             image = image.transpose(Image.ROTATE_180)
 
-        # Empaquetado por páginas: cada byte representa 8 pixeles verticales.
         pixels = image.load()
 
         for page in range(self.pages):
@@ -245,9 +255,10 @@ class Display:
         bus: int = OLED_I2C_BUS,
         width: int = OLED_WIDTH,
         height: int = OLED_HEIGHT,
-        column_offset: int = 0,
-        page_offset: int = 0,
+        column_offset: int = DEFAULT_COLUMN_OFFSET,
+        page_offset: int = DEFAULT_PAGE_OFFSET,
         rotate_180: bool = False,
+        contrast: int = 0x7F,
     ):
         self.mode = mode
         self.address = address
@@ -262,19 +273,17 @@ class Display:
             return
 
         try:
-            if mode == "sh1107-direct":
-                self.device = SH1107Direct(
-                    bus=bus,
-                    address=address,
-                    width=width,
-                    height=height,
-                    column_offset=column_offset,
-                    page_offset=page_offset,
-                    rotate_180=rotate_180,
-                )
-                self.available = True
-            else:
-                raise ValueError(f"Modo de pantalla no soportado: {mode}")
+            self.device = SH1107Direct(
+                bus=bus,
+                address=address,
+                width=width,
+                height=height,
+                column_offset=column_offset,
+                page_offset=page_offset,
+                rotate_180=rotate_180,
+                contrast=contrast,
+            )
+            self.available = True
 
         except Exception as exc:
             self.available = False
@@ -295,6 +304,7 @@ class Display:
             image = Image.new("1", (self.width, self.height))
             draw = ImageDraw.Draw(image)
 
+            # Layout superior, no centrado.
             y = 0
             line_height = 9
 
@@ -355,7 +365,6 @@ def show_menu() -> None:
 
     lines.append("")
     lines.append("B3 OK  B4 volver")
-
     display.show(lines)
 
 
@@ -403,6 +412,21 @@ def show_action(title: str, message: str) -> None:
     ])
 
 
+def show_page_test() -> None:
+    display.show([
+        "PRUEBA PANTALLA",
+        "Si esto aparece",
+        "arriba, ya esta",
+        "bien alineada.",
+        "",
+        "Si sigue al centro",
+        "probar:",
+        "--page-offset 0",
+        "--page-offset 2",
+        "--page-offset 6",
+    ])
+
+
 def render() -> None:
     if current_screen == "splash":
         show_splash()
@@ -412,6 +436,8 @@ def render() -> None:
         show_status()
     elif current_screen == "about":
         show_about()
+    elif current_screen == "screen-test":
+        show_page_test()
     else:
         show_menu()
 
@@ -577,20 +603,31 @@ def parse_args():
     )
     parser.add_argument(
         "--column-offset",
-        default=0,
+        default=DEFAULT_COLUMN_OFFSET,
         type=int,
-        help="Offset de columna para ajustar imagen si aparece corrida.",
+        help="Offset de columna. Default: 0",
     )
     parser.add_argument(
         "--page-offset",
-        default=0,
+        default=DEFAULT_PAGE_OFFSET,
         type=int,
-        help="Offset de página para ajustar imagen si aparece corrida.",
+        help="Offset de página. Default: 4",
     )
     parser.add_argument(
         "--rotate-180",
         action="store_true",
         help="Rota la imagen 180 grados.",
+    )
+    parser.add_argument(
+        "--contrast",
+        default=0x7F,
+        type=lambda x: int(x, 0),
+        help="Contraste. Default: 0x7F",
+    )
+    parser.add_argument(
+        "--screen-test",
+        action="store_true",
+        help="Muestra una pantalla de prueba de alineación.",
     )
     return parser.parse_args()
 
@@ -610,6 +647,7 @@ def main() -> None:
         column_offset=args.column_offset,
         page_offset=args.page_offset,
         rotate_180=args.rotate_180,
+        contrast=args.contrast,
     )
 
     signal.signal(signal.SIGINT, stop_program)
@@ -617,13 +655,15 @@ def main() -> None:
 
     buttons = setup_buttons()
 
-    current_screen = "splash"
-    render()
-
-    time.sleep(2.5)
-
-    current_screen = "menu"
-    render()
+    if args.screen_test:
+        current_screen = "screen-test"
+        render()
+    else:
+        current_screen = "splash"
+        render()
+        time.sleep(2.5)
+        current_screen = "menu"
+        render()
 
     while running:
         try:
