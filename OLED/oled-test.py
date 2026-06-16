@@ -6,10 +6,14 @@ Contra Espacios - oled-test.py
 
 Prueba de pantalla OLED I2C + 5 botones para Raspberry Pi.
 
+Pensado para ejecutarse desde Home así:
+
+  source ~/Documents/GitHub/contraespacios/OLED/.venv/bin/activate
+  python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py
+
 Pantalla:
   OLED I2C en GPIO2 / GPIO3.
-  Este programa usa SH1107 128x96 por defecto, porque algunas pantallas OLED
-  de 1.13" 128x96 se ven con ruido o texto roto si se controlan como SSD1306.
+  Driver directo SH1107 128x96 por defecto.
 
 Botones, de izquierda a derecha, empezando en pin físico 11:
   Botón 1: pin físico 11 / GPIO17 -> Arriba / anterior
@@ -24,13 +28,6 @@ Este es un programa de prueba:
   - No genera SVG real.
   - No genera G-code real.
   - No mueve la CNC.
-
-Solo prueba:
-  - OLED.
-  - Botones.
-  - Presentación.
-  - Menú.
-  - Estados simulados.
 """
 
 from __future__ import annotations
@@ -38,12 +35,12 @@ from __future__ import annotations
 import argparse
 import queue
 import signal
-import sys
 import time
 from dataclasses import dataclass
 from typing import Optional
 
 from gpiozero import Button
+from PIL import Image, ImageDraw, ImageFont
 
 
 # ---------------------------------------------------------------------
@@ -57,6 +54,7 @@ PIN_BUTTON_3 = 22  # Físico 15
 PIN_BUTTON_4 = 23  # Físico 16
 PIN_BUTTON_5 = 24  # Físico 18
 
+OLED_I2C_BUS = 1
 OLED_I2C_ADDRESS = 0x3C
 OLED_WIDTH = 128
 OLED_HEIGHT = 96
@@ -101,7 +99,7 @@ def get_pin_factory():
     Usa LGPIOFactory de forma explícita.
 
     En Raspberry Pi OS moderno, gpiozero necesita un backend GPIO funcional.
-    Sin lgpio puede caer al backend NativeFactory/sysfs, que suele romperse.
+    Sin lgpio puede caer al backend NativeFactory/sysfs y romperse.
     """
     try:
         from gpiozero.pins.lgpio import LGPIOFactory
@@ -118,104 +116,182 @@ def get_pin_factory():
 
 
 # ---------------------------------------------------------------------
-# OLED
+# Driver directo SH1107
 # ---------------------------------------------------------------------
 
-class Display:
+class SH1107Direct:
     """
-    Control de OLED.
+    Driver mínimo directo para OLED SH1107 128x96 por I2C.
 
-    Importante:
-    - No se escribe a la pantalla desde callbacks de botones.
-    - Los callbacks solo meten eventos a una cola.
-    - El loop principal procesa eventos y redibuja.
-
-    Esto evita errores I2C cuando se presionan botones rápido o cuando el callback
-    de gpiozero intenta dibujar desde otro hilo. Sí, los hilos otra vez arruinando
-    la paz social.
+    Se evita luma.oled porque algunas pantallas 128x96 se ven con ruido o texto
+    roto cuando se controlan como SSD1306, y porque conviene tener control más
+    directo mientras se prueba el hardware.
     """
 
     def __init__(
         self,
-        driver: str = "sh1107",
+        bus: int = OLED_I2C_BUS,
         address: int = OLED_I2C_ADDRESS,
         width: int = OLED_WIDTH,
         height: int = OLED_HEIGHT,
-        rotate: int = 0,
-        console: bool = False,
+        column_offset: int = 0,
+        page_offset: int = 0,
+        rotate_180: bool = False,
     ):
-        self.driver = driver
+        from smbus2 import SMBus
+
+        self.bus_number = bus
         self.address = address
         self.width = width
         self.height = height
-        self.rotate = rotate
-        self.console = console
+        self.pages = height // 8
+        self.column_offset = column_offset
+        self.page_offset = page_offset
+        self.rotate_180 = rotate_180
+        self.bus = SMBus(bus)
+        self.init_display()
+
+    def command(self, *cmds: int) -> None:
+        for cmd in cmds:
+            self.bus.write_byte_data(self.address, 0x00, cmd & 0xFF)
+
+    def data_block(self, data: list[int]) -> None:
+        """
+        Envía datos en bloques pequeños. Algunos adaptadores I2C se ponen
+        dramáticos con bloques grandes. Qué sorpresa: otro límite invisible.
+        """
+        block_size = 16
+        for i in range(0, len(data), block_size):
+            self.bus.write_i2c_block_data(
+                self.address,
+                0x40,
+                [b & 0xFF for b in data[i:i + block_size]],
+            )
+
+    def init_display(self) -> None:
+        # Secuencia estable para SH1107 128x96.
+        self.command(0xAE)        # Display OFF
+        self.command(0xD5, 0x50)  # Clock
+        self.command(0xA8, 0x5F)  # Multiplex ratio: 96 - 1
+        self.command(0xD3, 0x00)  # Display offset
+        self.command(0x40)        # Start line
+
+        # DC-DC / charge pump para SH1107.
+        self.command(0xAD, 0x8B)
+
+        if self.rotate_180:
+            self.command(0xA0)    # Segment remap normal
+            self.command(0xC0)    # COM scan normal
+        else:
+            self.command(0xA1)    # Segment remap
+            self.command(0xC8)    # COM scan dec
+
+        self.command(0xDA, 0x12)  # COM pins
+        self.command(0x81, 0x80)  # Contrast
+        self.command(0xD9, 0x1F)  # Pre-charge
+        self.command(0xDB, 0x35)  # VCOM deselect
+        self.command(0xA4)        # Resume display from RAM
+        self.command(0xA6)        # Normal display
+        self.command(0xAF)        # Display ON
+        self.clear()
+
+    def clear(self) -> None:
+        blank = [0x00] * self.width
+        for page in range(self.pages):
+            self.set_page(page)
+            self.data_block(blank)
+
+    def set_page(self, page: int) -> None:
+        page_addr = 0xB0 + self.page_offset + page
+        col = self.column_offset
+        self.command(page_addr)
+        self.command(0x00 + (col & 0x0F))
+        self.command(0x10 + ((col >> 4) & 0x0F))
+
+    def display_image(self, image: Image.Image) -> None:
+        image = image.convert("1")
+
+        if self.rotate_180:
+            image = image.transpose(Image.ROTATE_180)
+
+        # Empaquetado por páginas: cada byte representa 8 pixeles verticales.
+        pixels = image.load()
+
+        for page in range(self.pages):
+            self.set_page(page)
+            data = []
+            y0 = page * 8
+
+            for x in range(self.width):
+                byte = 0
+                for bit in range(8):
+                    y = y0 + bit
+                    if y < self.height and pixels[x, y] != 0:
+                        byte |= (1 << bit)
+                data.append(byte)
+
+            self.data_block(data)
+
+
+# ---------------------------------------------------------------------
+# Pantalla
+# ---------------------------------------------------------------------
+
+class Display:
+    def __init__(
+        self,
+        mode: str = "sh1107-direct",
+        address: int = OLED_I2C_ADDRESS,
+        bus: int = OLED_I2C_BUS,
+        width: int = OLED_WIDTH,
+        height: int = OLED_HEIGHT,
+        column_offset: int = 0,
+        page_offset: int = 0,
+        rotate_180: bool = False,
+    ):
+        self.mode = mode
+        self.address = address
+        self.bus = bus
+        self.width = width
+        self.height = height
         self.available = False
         self.device = None
-        self.font = None
+        self.font = ImageFont.load_default()
 
-        if self.console:
+        if mode == "console":
             return
 
-        self.init_device()
-
-    def init_device(self) -> None:
         try:
-            from luma.core.interface.serial import i2c
-            from PIL import ImageFont
-
-            serial = i2c(port=1, address=self.address)
-
-            if self.driver == "sh1107":
-                from luma.oled.device import sh1107
-                self.device = sh1107(
-                    serial,
-                    width=self.width,
-                    height=self.height,
-                    rotate=self.rotate,
+            if mode == "sh1107-direct":
+                self.device = SH1107Direct(
+                    bus=bus,
+                    address=address,
+                    width=width,
+                    height=height,
+                    column_offset=column_offset,
+                    page_offset=page_offset,
+                    rotate_180=rotate_180,
                 )
-
-            elif self.driver == "ssd1306":
-                from luma.oled.device import ssd1306
-                self.device = ssd1306(
-                    serial,
-                    width=self.width,
-                    height=self.height,
-                    rotate=self.rotate,
-                )
-
-            elif self.driver == "sh1106":
-                from luma.oled.device import sh1106
-                self.device = sh1106(
-                    serial,
-                    width=self.width,
-                    height=self.height,
-                    rotate=self.rotate,
-                )
-
+                self.available = True
             else:
-                raise ValueError(f"Driver no soportado: {self.driver}")
-
-            self.font = ImageFont.load_default()
-            self.available = True
+                raise ValueError(f"Modo de pantalla no soportado: {mode}")
 
         except Exception as exc:
             self.available = False
             print("OLED no disponible. Usando salida por consola.")
-            print(f"Driver solicitado: {self.driver}")
+            print(f"Modo solicitado: {mode}")
+            print(f"Dirección I2C: 0x{address:02X}")
             print(f"Detalle: {exc}")
 
     def show(self, lines: list[str]) -> None:
         lines = [str(line) for line in lines]
 
-        if self.console or not self.available:
+        if self.mode == "console" or not self.available:
             print("\033c", end="")
             print("\n".join(lines))
             return
 
         try:
-            from PIL import Image, ImageDraw
-
             image = Image.new("1", (self.width, self.height))
             draw = ImageDraw.Draw(image)
 
@@ -226,11 +302,9 @@ class Display:
                 draw.text((0, y), line[:21], font=self.font, fill=255)
                 y += line_height
 
-            self.device.display(image)
+            self.device.display_image(image)
 
         except OSError as exc:
-            # Si el bus I2C se cae, no matamos el programa.
-            # Marcamos OLED como no disponible y seguimos en consola.
             self.available = False
             print("Error I2C al escribir OLED. Cambio temporal a consola.")
             print(f"Detalle: {exc}")
@@ -486,21 +560,37 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Contra Espacios OLED + botones test")
     parser.add_argument(
         "--display",
-        default="sh1107",
-        choices=["sh1107", "ssd1306", "sh1106", "console"],
-        help="Driver de pantalla. Default: sh1107",
-    )
-    parser.add_argument(
-        "--rotate",
-        default=0,
-        type=int,
-        choices=[0, 1, 2, 3],
-        help="Rotación de pantalla para luma.oled.",
+        default="sh1107-direct",
+        choices=["sh1107-direct", "console"],
+        help="Modo de pantalla. Default: sh1107-direct",
     )
     parser.add_argument(
         "--address",
         default="0x3C",
         help="Dirección I2C. Default: 0x3C",
+    )
+    parser.add_argument(
+        "--bus",
+        default=1,
+        type=int,
+        help="Bus I2C. Default: 1",
+    )
+    parser.add_argument(
+        "--column-offset",
+        default=0,
+        type=int,
+        help="Offset de columna para ajustar imagen si aparece corrida.",
+    )
+    parser.add_argument(
+        "--page-offset",
+        default=0,
+        type=int,
+        help="Offset de página para ajustar imagen si aparece corrida.",
+    )
+    parser.add_argument(
+        "--rotate-180",
+        action="store_true",
+        help="Rota la imagen 180 grados.",
     )
     return parser.parse_args()
 
@@ -512,12 +602,14 @@ def main() -> None:
     address = int(args.address, 16) if isinstance(args.address, str) else args.address
 
     display = Display(
-        driver="sh1107" if args.display == "console" else args.display,
+        mode=args.display,
         address=address,
+        bus=args.bus,
         width=OLED_WIDTH,
         height=OLED_HEIGHT,
-        rotate=args.rotate,
-        console=(args.display == "console"),
+        column_offset=args.column_offset,
+        page_offset=args.page_offset,
+        rotate_180=args.rotate_180,
     )
 
     signal.signal(signal.SIGINT, stop_program)

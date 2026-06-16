@@ -2,13 +2,13 @@
 
 Programa de prueba para la pantalla OLED I2C y cinco botones físicos del proyecto **Contra Espacios**.
 
-Este programa se llama:
+Archivo principal:
 
 ```text
 oled-test.py
 ```
 
-La ruta esperada dentro del repositorio es:
+Ruta esperada:
 
 ```text
 ~/Documents/GitHub/contraespacios/OLED/oled-test.py
@@ -18,25 +18,41 @@ La ruta esperada dentro del repositorio es:
 
 ## 1. Qué corrige esta versión
 
-Esta versión corrige dos problemas:
+Esta versión corrige la forma de ejecución y la forma de controlar la pantalla.
 
-1. **GPIO en Raspberry Pi OS Trixie**  
-   Se fuerza el uso de `LGPIOFactory` para que `gpiozero` no caiga al backend experimental `NativeFactory`.
+### 1.1 Ejecución desde Home
 
-2. **Pantalla con ruido o texto roto**  
-   Se usa por defecto el driver `sh1107` con tamaño `128x96`, porque esta pantalla OLED requiere controlarse así. Si se controla como `ssd1306`, puede mostrar ruido, texto cortado o comportamiento inestable. Porque aparentemente hasta una pantalla de 1 pulgada tiene una crisis de identidad.
+El programa está pensado para ejecutarse desde `Home` usando la ruta completa:
 
-También se corrigió otra cosa importante:
-
-3. **Los botones ya no escriben directo a la pantalla desde callbacks**  
-   Los callbacks de `gpiozero` corren en hilos. Antes, al presionar un botón, el callback intentaba escribir directo al bus I2C y eso podía provocar errores como:
-
-```text
-OSError: [Errno 5] Input/output error
-DeviceNotFoundError: I2C device not found on address: 0x3C
+```bash
+python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py
 ```
 
-Ahora los botones solo mandan eventos a una cola. El loop principal lee esa cola y actualiza la OLED. Más aburrido, más estable. Qué tragedia.
+No depende de que estés parada dentro de la carpeta `OLED`. Por fin, una pequeña victoria contra las rutas relativas, esa plaga elegante.
+
+### 1.2 Pantalla OLED
+
+La pantalla se controla con un driver directo para **SH1107 128x96**.
+
+Esto evita tratarla como una `ssd1306` genérica, que en esta pantalla puede provocar:
+
+- ruido visual,
+- texto roto,
+- imagen corrida,
+- errores I2C,
+- comportamiento inestable.
+
+### 1.3 Botones
+
+Los botones ya no escriben directo a la pantalla desde callbacks de `gpiozero`.
+
+Ahora:
+
+```text
+botón -> evento -> cola -> loop principal -> OLED
+```
+
+Esto evita que los hilos de `gpiozero` intenten escribir al bus I2C al mismo tiempo.
 
 ---
 
@@ -144,24 +160,18 @@ Dibujo
 
 ## 5. Instalar dependencias desde Home
 
-Todas estas instrucciones parten desde `Home`.
+### 5.1 Instalar paquetes del sistema
 
-### 5.1 Entrar a la carpeta del programa
-
-```bash
-cd ~/Documents/GitHub/contraespacios/OLED
-```
-
-### 5.2 Instalar paquetes del sistema
+Desde Home:
 
 ```bash
 sudo apt update
-sudo apt install -y python3-lgpio python3-gpiozero python3-pil i2c-tools
+sudo apt install -y python3-lgpio python3-gpiozero python3-pil python3-smbus i2c-tools
 ```
 
-### 5.3 Crear entorno virtual con paquetes del sistema
+### 5.2 Crear entorno virtual con paquetes del sistema
 
-Es importante usar `--system-site-packages` para que el entorno virtual vea `python3-lgpio`.
+Desde Home:
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/OLED
@@ -170,11 +180,13 @@ python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 ```
 
-### 5.4 Instalar librería OLED
+### 5.3 Instalar dependencias Python
 
 ```bash
-pip install luma.oled
+pip install pillow smbus2
 ```
+
+Nota: `gpiozero`, `lgpio` y `PIL` pueden venir desde los paquetes del sistema gracias a `--system-site-packages`.
 
 ---
 
@@ -227,11 +239,19 @@ Si no aparece:
 
 ## 8. Ejecutar programa desde Home
 
+Activar entorno:
+
 ```bash
-cd ~/Documents/GitHub/contraespacios/OLED
-source .venv/bin/activate
-python3 oled-test.py
+source ~/Documents/GitHub/contraespacios/OLED/.venv/bin/activate
 ```
+
+Ejecutar usando ruta completa:
+
+```bash
+python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py
+```
+
+Este es el comando recomendado.
 
 ---
 
@@ -240,61 +260,43 @@ python3 oled-test.py
 Esto sirve para probar botones aunque la pantalla esté fallando:
 
 ```bash
-cd ~/Documents/GitHub/contraespacios/OLED
-source .venv/bin/activate
-python3 oled-test.py --display console
+source ~/Documents/GitHub/contraespacios/OLED/.venv/bin/activate
+python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py --display console
 ```
 
 ---
 
-## 10. Probar otros drivers de pantalla
+## 10. Ajustes si la imagen aparece corrida
 
-La pantalla debería funcionar con:
+Si la pantalla prende pero la imagen aparece corrida, prueba offsets.
+
+### Offset de columna
 
 ```bash
-python3 oled-test.py --display sh1107
+python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py --column-offset 2
 ```
 
-Si se necesita probar:
+También puedes probar:
 
 ```bash
-python3 oled-test.py --display sh1106
+python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py --column-offset 4
 ```
 
-o:
+### Offset de página
 
 ```bash
-python3 oled-test.py --display ssd1306
+python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py --page-offset 1
 ```
 
-Para tu pantalla, la opción recomendada es:
+### Rotar 180 grados
 
 ```bash
-python3 oled-test.py --display sh1107
+python3 ~/Documents/GitHub/contraespacios/OLED/oled-test.py --rotate-180
 ```
 
 ---
 
-## 11. Rotar pantalla
-
-Si el texto aparece girado:
-
-```bash
-python3 oled-test.py --rotate 1
-```
-
-Opciones:
-
-```text
-0
-1
-2
-3
-```
-
----
-
-## 12. Qué debe mostrar
+## 11. Qué debe mostrar
 
 Al iniciar:
 
@@ -324,7 +326,7 @@ Menu principal
 
 ---
 
-## 13. Menú actual
+## 12. Menú actual
 
 ### Capturar foto
 
@@ -397,7 +399,7 @@ Muestra una descripción breve del proyecto.
 
 ---
 
-## 14. Salir del programa
+## 13. Salir del programa
 
 Presionar:
 
@@ -407,12 +409,12 @@ Ctrl+C
 
 ---
 
-## 15. Estado de esta prueba
+## 14. Estado de esta prueba
 
 - [x] OLED en GPIO2/GPIO3.
 - [x] Botones en GPIO17, GPIO27, GPIO22, GPIO23, GPIO24.
 - [x] Mapeo de botones de izquierda a derecha.
-- [x] Driver SH1107 128x96 por defecto.
+- [x] Driver directo SH1107 128x96 por defecto.
 - [x] Uso de LGPIOFactory.
 - [x] Cola de eventos para no escribir OLED desde callbacks.
 - [x] Menú de prueba.
