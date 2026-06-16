@@ -36,29 +36,39 @@ Ejecutar:
 python3 oled-test.py
 ```
 
-Esta vuelve a ser la forma normal. Nada de rutas kilométricas desde Home, porque eso fue una idea técnicamente válida y humanamente fastidiosa. El progreso a veces consiste en deshacer lo innecesario.
-
 ---
 
-## 2. Qué corrige esta versión
+## 2. Por qué esta versión prueba otros modelos
 
-Esta versión cambia tres cosas importantes:
+La prueba anterior ya demostró que los botones funcionan, pero la OLED no está mapeando bien la memoria de pantalla.
 
-1. **Quita el modo consola como fallback.**  
-   Si falla la OLED, el programa intenta reconectarse a la pantalla. Ya no cambia silenciosamente a consola.
+Síntomas observados:
 
-2. **Mueve el texto hacia arriba.**  
-   El texto se dibuja desde `y = 0`, con `page_offset = 0` por defecto.
+- En `screen-test` solo aparecen las líneas 8, 9 y 10 abajo.
+- El primer pixel de la palabra `LINEA` aparece cortado.
+- Hay líneas basura al final de la pantalla, hacia la derecha.
+- Los offsets no corrigen lo suficiente.
 
-3. **Limpia la memoria completa de la pantalla antes de redibujar.**  
-   Esto reduce basura visual o texto viejo que queda debajo cuando se navega en el menú.
+Eso indica que no conviene seguir empujando offsets a ciegas. Es mejor probar otro modelo/controlador de pantalla.
 
-También mantiene:
+Esta versión permite probar:
 
-- driver directo **SH1107 128x96**,
-- `LGPIOFactory`,
-- cola de eventos para botones,
-- escritura OLED solo desde el loop principal.
+```text
+ssd1306
+sh1106
+sh1107
+ssd1306-direct
+sh1106-direct
+sh1107-direct
+```
+
+El nuevo default es:
+
+```text
+ssd1306
+```
+
+porque el síntoma actual sugiere que el mapeo SH1107 directo no corresponde a tu módulo.
 
 ---
 
@@ -144,21 +154,13 @@ Regresa al menú principal.
 
 ### Botón 5 - GPIO24 - Estado
 
-Muestra el estado interno del sistema:
-
-```text
-Foto
-Ambiente
-SVG
-G-code
-Dibujo
-```
+Muestra el estado interno del sistema.
 
 ---
 
 ## 6. Dependencias necesarias
 
-Estas dos líneas son importantes y deben quedar documentadas porque resuelven el problema de `gpiozero` en Raspberry Pi OS moderno:
+Estas líneas son importantes para `gpiozero` en Raspberry Pi OS moderno:
 
 ```bash
 sudo apt install -y python3-lgpio python3-gpiozero
@@ -174,16 +176,8 @@ sudo apt install -y python3-lgpio python3-gpiozero python3-pil python3-smbus i2c
 rm -rf .venv
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
-pip install pillow smbus2
+pip install luma.oled pillow smbus2
 ```
-
-Nota: `gpiozero`, `lgpio` y `PIL` pueden venir desde los paquetes del sistema gracias a:
-
-```bash
-python3 -m venv --system-site-packages .venv
-```
-
-Sí, esta línea importa. No es decoración ceremonial de terminal.
 
 ---
 
@@ -230,23 +224,53 @@ Si no aparece:
 
 ---
 
-## 9. Ejecutar programa
+## 9. Prueba rápida con driver default
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/OLED
 source .venv/bin/activate
-python3 oled-test.py
+python3 oled-test.py --screen-test
+```
+
+El default ahora usa:
+
+```text
+--driver ssd1306
 ```
 
 ---
 
-## 10. Probar pantalla de alineación
+## 10. Probar modelos de pantalla
+
+Ejecutar uno por uno:
 
 ```bash
-python3 oled-test.py --screen-test
+python3 oled-test.py --screen-test --driver ssd1306
 ```
 
-Debe verse:
+```bash
+python3 oled-test.py --screen-test --driver sh1106
+```
+
+```bash
+python3 oled-test.py --screen-test --driver sh1107
+```
+
+Si esos no quedan bien, probar los drivers directos:
+
+```bash
+python3 oled-test.py --screen-test --driver ssd1306-direct
+```
+
+```bash
+python3 oled-test.py --screen-test --driver sh1106-direct
+```
+
+```bash
+python3 oled-test.py --screen-test --driver sh1107-direct
+```
+
+La pantalla correcta es la que muestre:
 
 ```text
 LINEA 1 ARRIBA
@@ -255,78 +279,69 @@ LINEA 3
 ...
 ```
 
-La línea 1 debe salir arriba.
+desde la parte superior, sin basura al lado derecho.
 
 ---
 
-## 11. Ajustes si el texto sigue cortado
+## 11. Ajustes útiles
 
-Si la parte de arriba sigue cortada:
+### Rotación con luma
 
 ```bash
-python3 oled-test.py --screen-test --page-offset 1
+python3 oled-test.py --screen-test --driver ssd1306 --rotate 1
+```
+
+Opciones:
+
+```text
+0
+1
+2
+3
+```
+
+### Ancho y alto
+
+Si 128x96 no funciona bien, probar 128x64 solo como diagnóstico:
+
+```bash
+python3 oled-test.py --screen-test --driver ssd1306 --height 64
+```
+
+### Offset de columna en drivers directos
+
+```bash
+python3 oled-test.py --screen-test --driver sh1106-direct --column-offset 2
 ```
 
 ```bash
-python3 oled-test.py --screen-test --page-offset 2
+python3 oled-test.py --screen-test --driver sh1106-direct --column-offset 4
 ```
 
-Si vuelve a verse al centro, regresar a:
+### Multiplex en drivers directos
 
 ```bash
-python3 oled-test.py --screen-test --page-offset 0
-```
-
-Si está corrida a los lados:
-
-```bash
-python3 oled-test.py --screen-test --column-offset 2
+python3 oled-test.py --screen-test --driver ssd1306-direct --multiplex 0x5F
 ```
 
 ```bash
-python3 oled-test.py --screen-test --column-offset 4
-```
-
-Si necesita un margen pequeño arriba:
-
-```bash
-python3 oled-test.py --screen-test --top-margin 2
-```
-
-Si está invertida:
-
-```bash
-python3 oled-test.py --rotate-180
+python3 oled-test.py --screen-test --driver ssd1306-direct --multiplex 0x7F
 ```
 
 ---
 
-## 12. Qué debe mostrar
+## 12. Ejecutar menú normal cuando encuentres el driver correcto
 
-Al iniciar:
+Ejemplo:
 
-```text
-CONTRA ESPACIOS
-
-Dibujo 16mm
-Ambiente + CNC
-
-Amaranta
-Chikiframe
-
-OLED + botones
+```bash
+python3 oled-test.py --driver ssd1306
 ```
 
-Después:
+o:
 
-```text
-CONTRA ESPACIOS
-Menu principal
-
-> Capturar foto
-  Capturar ambiente
-  Generar dibujo
-  Ejecutar dibujo
+```bash
+python3 oled-test.py --driver sh1106
 ```
 
 ---
@@ -337,52 +352,17 @@ Menu principal
 
 Simula captura de foto.
 
-Marca:
-
-```text
-Foto: OK
-```
-
-Más adelante llamará al programa real de ESP32CAM.
-
 ### Capturar ambiente
 
 Simula lectura ambiental.
 
-Marca:
-
-```text
-Ambiente: OK
-```
-
-Más adelante llamará al programa real del ENS160 + AHT2X conectado directo a Raspberry Pi.
-
 ### Generar dibujo
 
-Simula generación de SVG y G-code.
-
-Solo funciona si antes están listas:
-
-- foto,
-- ambiente.
-
-Si falta algo, indica:
-
-```text
-Falta foto/amb
-```
+Simula generación de SVG y G-code. Requiere foto y ambiente simulados.
 
 ### Ejecutar dibujo
 
-Simula ejecución del dibujo.
-
-Solo funciona si antes existe G-code.
-
-Si falta, indica:
-
-```text
-Falta Gcode
-```
+Simula ejecución del dibujo. Requiere G-code simulado.
 
 ### Estado
 
@@ -409,13 +389,12 @@ Ctrl+C
 - [x] OLED en GPIO2/GPIO3.
 - [x] Botones en GPIO17, GPIO27, GPIO22, GPIO23, GPIO24.
 - [x] Mapeo de botones de izquierda a derecha.
-- [x] Driver directo SH1107 128x96.
-- [x] `page_offset=0` por defecto.
-- [x] Reconexión OLED si falla I2C.
+- [x] Prueba de varios modelos de pantalla.
 - [x] Uso de LGPIOFactory.
 - [x] Cola de eventos para no escribir OLED desde callbacks.
 - [x] Menú de prueba.
 - [x] Acciones simuladas.
+- [ ] Identificar driver exacto de la OLED.
 - [ ] Integrar captura real de ESP32CAM.
 - [ ] Integrar lectura real de ENS160 + AHT2X.
 - [ ] Integrar generación real de SVG/G-code.

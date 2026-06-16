@@ -14,8 +14,7 @@ Forma normal de ejecución:
 
 Pantalla:
   OLED I2C en GPIO2 / GPIO3.
-  Control directo SH1107 128x96.
-  Default: page_offset 0 para que el texto arranque arriba.
+  Esta versión permite probar varios drivers/modelos de OLED.
 
 Botones, de izquierda a derecha, empezando en pin físico 11:
   Botón 1: pin físico 11 / GPIO17 -> Arriba / anterior
@@ -59,11 +58,6 @@ OLED_I2C_BUS = 1
 OLED_I2C_ADDRESS = 0x3C
 OLED_WIDTH = 128
 OLED_HEIGHT = 96
-
-# Si el título sale a media pantalla, el offset era demasiado alto.
-# Default corregido: escribir desde página 0.
-DEFAULT_PAGE_OFFSET = 0
-DEFAULT_COLUMN_OFFSET = 0
 
 
 # ---------------------------------------------------------------------
@@ -117,30 +111,76 @@ def get_pin_factory():
 
 
 # ---------------------------------------------------------------------
-# Driver directo SH1107
+# Drivers de pantalla
 # ---------------------------------------------------------------------
 
-class SH1107Direct:
+class LumaOLED:
     """
-    Driver mínimo directo para OLED SH1107 128x96 por I2C.
+    Control por luma.oled.
 
-    Esta versión:
-    - dibuja desde la parte superior,
-    - limpia la RAM completa antes de cada pantalla,
-    - no cae a consola si falla I2C,
-    - intenta reconectar la OLED automáticamente.
+    Esta ruta permite probar modelos como ssd1306, sh1106 y sh1107 sin reescribir
+    todo el programa cada vez que una OLED decide fingir que es otra OLED.
     """
 
     def __init__(
         self,
-        bus: int = OLED_I2C_BUS,
-        address: int = OLED_I2C_ADDRESS,
-        width: int = OLED_WIDTH,
-        height: int = OLED_HEIGHT,
-        column_offset: int = DEFAULT_COLUMN_OFFSET,
-        page_offset: int = DEFAULT_PAGE_OFFSET,
-        rotate_180: bool = False,
-        contrast: int = 0x7F,
+        driver: str,
+        bus: int,
+        address: int,
+        width: int,
+        height: int,
+        rotate: int,
+    ):
+        from luma.core.interface.serial import i2c
+        from luma.oled.device import ssd1306, sh1106, sh1107
+
+        serial = i2c(port=bus, address=address)
+
+        if driver == "ssd1306":
+            self.device = ssd1306(serial, width=width, height=height, rotate=rotate)
+        elif driver == "sh1106":
+            self.device = sh1106(serial, width=width, height=height, rotate=rotate)
+        elif driver == "sh1107":
+            self.device = sh1107(serial, width=width, height=height, rotate=rotate)
+        else:
+            raise ValueError(f"Driver luma no soportado: {driver}")
+
+    def display_image(self, image: Image.Image) -> None:
+        self.device.display(image.convert("1"))
+
+    def cleanup(self) -> None:
+        try:
+            self.device.clear()
+        except Exception:
+            pass
+
+
+class DirectPageOLED:
+    """
+    Driver directo por páginas para controladores compatibles con comandos tipo SSD1306/SH1106.
+
+    Útil para probar:
+    - ssd1306-direct
+    - sh1106-direct
+    - sh1107-direct
+
+    Si solo aparecen líneas 8, 9 y 10 abajo, el mapeo de páginas no coincide con
+    la pantalla real. En ese caso conviene probar otro driver, no seguir moviendo
+    offsets como si eso fuera terapia.
+    """
+
+    def __init__(
+        self,
+        bus: int,
+        address: int,
+        width: int,
+        height: int,
+        controller: str,
+        column_offset: int,
+        page_offset: int,
+        rotate_180: bool,
+        contrast: int,
+        multiplex: int,
     ):
         from smbus2 import SMBus
 
@@ -150,10 +190,12 @@ class SH1107Direct:
         self.width = width
         self.height = height
         self.pages = height // 8
+        self.controller = controller
         self.column_offset = column_offset
         self.page_offset = page_offset
         self.rotate_180 = rotate_180
         self.contrast = max(0, min(255, int(contrast)))
+        self.multiplex = multiplex
         self.bus = None
         self.connect()
 
@@ -163,12 +205,11 @@ class SH1107Direct:
                 self.bus.close()
             except Exception:
                 pass
-
         self.bus = self.SMBus(self.bus_number)
         self.init_display()
 
     def reconnect(self) -> None:
-        time.sleep(0.15)
+        time.sleep(0.2)
         self.connect()
 
     def command(self, *cmds: int) -> None:
@@ -176,7 +217,6 @@ class SH1107Direct:
             self.bus.write_byte_data(self.address, 0x00, cmd & 0xFF)
 
     def data_block(self, data: list[int]) -> None:
-        # Bloques pequeños para evitar errores I2C.
         block_size = 8
         for i in range(0, len(data), block_size):
             self.bus.write_i2c_block_data(
@@ -187,13 +227,17 @@ class SH1107Direct:
 
     def init_display(self) -> None:
         self.command(0xAE)        # Display OFF
-        self.command(0xD5, 0x50)  # Clock divide
-        self.command(0xA8, 0x5F)  # Multiplex ratio: 96 - 1
+        self.command(0xD5, 0x80)  # Clock divide
+        self.command(0xA8, self.multiplex)  # Multiplex
         self.command(0xD3, 0x00)  # Display offset
-        self.command(0x40)        # Display start line 0
+        self.command(0x40)        # Start line
 
-        # DC-DC / charge pump SH1107.
-        self.command(0xAD, 0x8B)
+        if self.controller in ("ssd1306", "sh1107"):
+            # Charge pump / DC-DC.
+            if self.controller == "ssd1306":
+                self.command(0x8D, 0x14)
+            else:
+                self.command(0xAD, 0x8B)
 
         if self.rotate_180:
             self.command(0xA0)
@@ -202,22 +246,14 @@ class SH1107Direct:
             self.command(0xA1)
             self.command(0xC8)
 
-        self.command(0xDA, 0x12)          # COM pins
-        self.command(0x81, self.contrast) # Contrast
-        self.command(0xD9, 0x1F)          # Pre-charge
-        self.command(0xDB, 0x35)          # VCOM deselect
-        self.command(0xA4)                # Resume from RAM
-        self.command(0xA6)                # Normal display
-        self.command(0xAF)                # Display ON
+        self.command(0xDA, 0x12)
+        self.command(0x81, self.contrast)
+        self.command(0xD9, 0xF1 if self.controller == "ssd1306" else 0x1F)
+        self.command(0xDB, 0x40 if self.controller == "ssd1306" else 0x35)
+        self.command(0xA4)
+        self.command(0xA6)
+        self.command(0xAF)
         self.clear_all_memory()
-
-    def clear_all_memory(self) -> None:
-        blank = [0x00] * self.width
-
-        # SH1107 puede tener 16 páginas internas aunque el módulo visible sea 96 px.
-        for page in range(16):
-            self.set_raw_page(page)
-            self.data_block(blank)
 
     def set_raw_page(self, raw_page: int) -> None:
         col = self.column_offset
@@ -225,26 +261,29 @@ class SH1107Direct:
         self.command(0x00 + (col & 0x0F))
         self.command(0x10 + ((col >> 4) & 0x0F))
 
-    def set_page(self, page: int) -> None:
-        raw_page = self.page_offset + page
-        self.set_raw_page(raw_page)
+    def clear_all_memory(self) -> None:
+        blank = [0x00] * self.width
+        for page in range(16):
+            try:
+                self.set_raw_page(page)
+                self.data_block(blank)
+            except Exception:
+                pass
 
     def display_image_once(self, image: Image.Image) -> None:
         image = image.convert("1")
-
         if self.rotate_180:
             image = image.transpose(Image.ROTATE_180)
 
-        # Limpieza total para no dejar texto viejo abajo.
         self.clear_all_memory()
 
         pixels = image.load()
 
         for page in range(self.pages):
-            self.set_page(page)
+            self.set_raw_page(self.page_offset + page)
             data = []
-            y0 = page * 8
 
+            y0 = page * 8
             for x in range(self.width):
                 byte = 0
                 for bit in range(8):
@@ -255,25 +294,15 @@ class SH1107Direct:
 
             self.data_block(data)
 
-    def display_image(self, image: Image.Image, retries: int = 3) -> bool:
+    def display_image(self, image: Image.Image, retries: int = 3) -> None:
         last_error = None
-
         for attempt in range(retries):
             try:
                 self.display_image_once(image)
-                return True
+                return
             except OSError as exc:
                 last_error = exc
-                print(f"Advertencia I2C OLED: {exc}. Reintentando conexión ({attempt + 1}/{retries})...")
-                try:
-                    self.reconnect()
-                except Exception as reconnect_exc:
-                    last_error = reconnect_exc
-                    print(f"No se pudo reconectar OLED: {reconnect_exc}")
-                    time.sleep(0.2)
-            except Exception as exc:
-                last_error = exc
-                print(f"Error OLED: {exc}. Reintentando ({attempt + 1}/{retries})...")
+                print(f"Advertencia I2C OLED: {exc}. Reintentando ({attempt + 1}/{retries})...")
                 try:
                     self.reconnect()
                 except Exception as reconnect_exc:
@@ -281,53 +310,72 @@ class SH1107Direct:
                     print(f"No se pudo reconectar OLED: {reconnect_exc}")
                     time.sleep(0.2)
 
-        print(f"No se pudo actualizar OLED después de {retries} intentos. Último error: {last_error}")
-        return False
+        raise RuntimeError(f"No se pudo actualizar OLED. Último error: {last_error}")
 
+    def cleanup(self) -> None:
+        try:
+            self.clear_all_memory()
+        except Exception:
+            pass
 
-# ---------------------------------------------------------------------
-# Pantalla
-# ---------------------------------------------------------------------
 
 class Display:
     def __init__(
         self,
-        address: int = OLED_I2C_ADDRESS,
-        bus: int = OLED_I2C_BUS,
-        width: int = OLED_WIDTH,
-        height: int = OLED_HEIGHT,
-        column_offset: int = DEFAULT_COLUMN_OFFSET,
-        page_offset: int = DEFAULT_PAGE_OFFSET,
-        rotate_180: bool = False,
-        contrast: int = 0x7F,
-        top_margin: int = 0,
-        left_margin: int = 0,
+        driver: str,
+        address: int,
+        bus: int,
+        width: int,
+        height: int,
+        column_offset: int,
+        page_offset: int,
+        rotate: int,
+        rotate_180: bool,
+        contrast: int,
+        top_margin: int,
+        left_margin: int,
+        multiplex: int,
     ):
+        self.driver = driver
         self.address = address
         self.bus = bus
         self.width = width
         self.height = height
         self.top_margin = top_margin
         self.left_margin = left_margin
-        self.device = SH1107Direct(
-            bus=bus,
-            address=address,
-            width=width,
-            height=height,
-            column_offset=column_offset,
-            page_offset=page_offset,
-            rotate_180=rotate_180,
-            contrast=contrast,
-        )
         self.font = ImageFont.load_default()
 
-    def show(self, lines: list[str]) -> None:
-        lines = [str(line) for line in lines]
+        if driver in ("ssd1306", "sh1106", "sh1107"):
+            self.device = LumaOLED(
+                driver=driver,
+                bus=bus,
+                address=address,
+                width=width,
+                height=height,
+                rotate=rotate,
+            )
+        elif driver in ("ssd1306-direct", "sh1106-direct", "sh1107-direct"):
+            controller = driver.replace("-direct", "")
+            self.device = DirectPageOLED(
+                bus=bus,
+                address=address,
+                width=width,
+                height=height,
+                controller=controller,
+                column_offset=column_offset,
+                page_offset=page_offset,
+                rotate_180=rotate_180,
+                contrast=contrast,
+                multiplex=multiplex,
+            )
+        else:
+            raise ValueError(f"Driver no soportado: {driver}")
 
+    def make_image(self, lines: list[str]) -> Image.Image:
+        lines = [str(line) for line in lines]
         image = Image.new("1", (self.width, self.height))
         draw = ImageDraw.Draw(image)
 
-        # Layout superior, no centrado.
         x = self.left_margin
         y = self.top_margin
         line_height = 9
@@ -336,7 +384,14 @@ class Display:
             draw.text((x, y), line[:21], font=self.font, fill=255)
             y += line_height
 
+        return image
+
+    def show(self, lines: list[str]) -> None:
+        image = self.make_image(lines)
         self.device.display_image(image)
+
+    def cleanup(self) -> None:
+        self.device.cleanup()
 
 
 display: Optional[Display] = None
@@ -570,7 +625,6 @@ def setup_buttons() -> list[Button]:
         Button(PIN_BUTTON_5, pull_up=True, bounce_time=0.22, pin_factory=pin_factory),
     ]
 
-    # Los callbacks NO dibujan pantalla. Solo agregan eventos.
     buttons[0].when_pressed = lambda: events.put("up")
     buttons[1].when_pressed = lambda: events.put("down")
     buttons[2].when_pressed = lambda: events.put("select")
@@ -591,57 +645,34 @@ def stop_program(signum=None, frame=None) -> None:
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Contra Espacios OLED + botones test")
+
     parser.add_argument(
-        "--address",
-        default="0x3C",
-        help="Dirección I2C. Default: 0x3C",
+        "--driver",
+        default="ssd1306",
+        choices=[
+            "ssd1306",
+            "sh1106",
+            "sh1107",
+            "ssd1306-direct",
+            "sh1106-direct",
+            "sh1107-direct",
+        ],
+        help="Driver/modelo de OLED. Default: ssd1306",
     )
-    parser.add_argument(
-        "--bus",
-        default=1,
-        type=int,
-        help="Bus I2C. Default: 1",
-    )
-    parser.add_argument(
-        "--column-offset",
-        default=DEFAULT_COLUMN_OFFSET,
-        type=int,
-        help="Offset de columna. Default: 0",
-    )
-    parser.add_argument(
-        "--page-offset",
-        default=DEFAULT_PAGE_OFFSET,
-        type=int,
-        help="Offset de página. Default: 0",
-    )
-    parser.add_argument(
-        "--top-margin",
-        default=0,
-        type=int,
-        help="Margen superior del texto en pixeles. Default: 0",
-    )
-    parser.add_argument(
-        "--left-margin",
-        default=0,
-        type=int,
-        help="Margen izquierdo del texto en pixeles. Default: 0",
-    )
-    parser.add_argument(
-        "--rotate-180",
-        action="store_true",
-        help="Rota la imagen 180 grados.",
-    )
-    parser.add_argument(
-        "--contrast",
-        default=0x7F,
-        type=lambda x: int(x, 0),
-        help="Contraste. Default: 0x7F",
-    )
-    parser.add_argument(
-        "--screen-test",
-        action="store_true",
-        help="Muestra una pantalla de prueba de alineación.",
-    )
+    parser.add_argument("--address", default="0x3C", help="Dirección I2C. Default: 0x3C")
+    parser.add_argument("--bus", default=1, type=int, help="Bus I2C. Default: 1")
+    parser.add_argument("--width", default=128, type=int, help="Ancho OLED. Default: 128")
+    parser.add_argument("--height", default=96, type=int, help="Alto OLED. Default: 96")
+    parser.add_argument("--column-offset", default=0, type=int, help="Offset de columna para drivers directos.")
+    parser.add_argument("--page-offset", default=0, type=int, help="Offset de página para drivers directos.")
+    parser.add_argument("--top-margin", default=0, type=int, help="Margen superior en pixeles.")
+    parser.add_argument("--left-margin", default=0, type=int, help="Margen izquierdo en pixeles.")
+    parser.add_argument("--rotate", default=0, type=int, choices=[0, 1, 2, 3], help="Rotación luma.")
+    parser.add_argument("--rotate-180", action="store_true", help="Rotación 180 para drivers directos.")
+    parser.add_argument("--contrast", default=0x7F, type=lambda x: int(x, 0), help="Contraste para drivers directos.")
+    parser.add_argument("--multiplex", default=0x5F, type=lambda x: int(x, 0), help="Multiplex para drivers directos. 0x5F=96px, 0x7F=128px.")
+    parser.add_argument("--screen-test", action="store_true", help="Muestra pantalla de prueba.")
+
     return parser.parse_args()
 
 
@@ -652,16 +683,19 @@ def main() -> None:
     address = int(args.address, 16) if isinstance(args.address, str) else args.address
 
     display = Display(
+        driver=args.driver,
         address=address,
         bus=args.bus,
-        width=OLED_WIDTH,
-        height=OLED_HEIGHT,
+        width=args.width,
+        height=args.height,
         column_offset=args.column_offset,
         page_offset=args.page_offset,
+        rotate=args.rotate,
         rotate_180=args.rotate_180,
         contrast=args.contrast,
         top_margin=args.top_margin,
         left_margin=args.left_margin,
+        multiplex=args.multiplex,
     )
 
     signal.signal(signal.SIGINT, stop_program)
@@ -686,14 +720,10 @@ def main() -> None:
         except queue.Empty:
             pass
 
-    display.show([
-        "CONTRA ESPACIOS",
-        "",
-        "Saliendo...",
-        "",
-        "Prueba terminada",
-    ])
-    time.sleep(0.3)
+    try:
+        display.cleanup()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
