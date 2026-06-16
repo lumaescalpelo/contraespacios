@@ -12,18 +12,22 @@ Forma normal:
   source .venv/bin/activate
   python3 oled-test.py
 
-Botones de izquierda a derecha, empezando en pin físico 11:
+Esta versión corrige el enfoque anterior:
+  - No escribe solo 96 px de memoria.
+  - Dibuja en una memoria interna completa de 128 px de alto.
+  - Después manda las 16 páginas completas al SH1107.
+  - Permite mover el contenido dentro de esa RAM con --ram-y-offset.
 
+Esto es necesario porque muchas OLED SH1107 128x96 usan una RAM interna
+de 128x128, aunque el panel visible sea de 128x96. Si solo se escriben 12 páginas,
+la pantalla puede mostrar líneas partidas, saltos, espacios en blanco y basura.
+
+Botones de izquierda a derecha, empezando en pin físico 11:
   Botón 1: pin físico 11 / GPIO17 -> Arriba / anterior
   Botón 2: pin físico 13 / GPIO27 -> Abajo / siguiente
   Botón 3: pin físico 15 / GPIO22 -> Seleccionar
   Botón 4: pin físico 16 / GPIO23 -> Volver
   Botón 5: pin físico 18 / GPIO24 -> Estado
-
-Notas:
-  - ssd1306 y sh1106 en luma.oled NO soportan 128x96.
-  - Para pantalla 128x96, probar primero sh1107.
-  - Si se quiere probar ssd1306/sh1106, hacerlo como diagnóstico con --height 64.
 """
 
 from __future__ import annotations
@@ -31,7 +35,6 @@ from __future__ import annotations
 import argparse
 import queue
 import signal
-import sys
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -52,8 +55,17 @@ PIN_BUTTON_5 = 24  # Pin físico 18
 
 OLED_I2C_BUS = 1
 OLED_I2C_ADDRESS = 0x3C
-DEFAULT_WIDTH = 128
-DEFAULT_HEIGHT = 96
+
+VISIBLE_WIDTH = 128
+VISIBLE_HEIGHT = 96
+
+# RAM interna típica del SH1107: 128 x 128.
+RAM_WIDTH = 128
+RAM_HEIGHT = 128
+
+# Por lo que reportaste, tu pantalla parece estar mostrando una ventana desplazada.
+# Este valor se puede ajustar. Si no queda bien, probar 0, 32, 64, 96.
+DEFAULT_RAM_Y_OFFSET = 64
 
 
 # ---------------------------------------------------------------------
@@ -106,69 +118,29 @@ def get_pin_factory():
 
 
 # ---------------------------------------------------------------------
-# Drivers OLED
+# Driver SH1107 usando RAM completa 128x128
 # ---------------------------------------------------------------------
 
-class LumaOLED:
+class SH1107FullRAM:
     """
-    Driver usando luma.oled.
+    Driver directo SH1107 usando framebuffer interno completo 128x128.
 
-    Importante:
-    - sh1107 soporta 128x96.
-    - ssd1306 y sh1106 NO soportan 128x96 en luma.oled.
-    """
-
-    def __init__(self, driver: str, bus: int, address: int, width: int, height: int, rotate: int):
-        from luma.core.interface.serial import i2c
-        from luma.oled.device import ssd1306, sh1106, sh1107
-        from luma.core.error import DeviceDisplayModeError
-
-        if driver in ("ssd1306", "sh1106") and (width, height) == (128, 96):
-            raise DeviceDisplayModeError(
-                f"{driver} en luma.oled no soporta 128x96. "
-                f"Usa --driver sh1107 para 128x96 o prueba {driver} con --height 64."
-            )
-
-        serial = i2c(port=bus, address=address)
-
-        if driver == "ssd1306":
-            self.device = ssd1306(serial, width=width, height=height, rotate=rotate)
-        elif driver == "sh1106":
-            self.device = sh1106(serial, width=width, height=height, rotate=rotate)
-        elif driver == "sh1107":
-            self.device = sh1107(serial, width=width, height=height, rotate=rotate)
-        else:
-            raise ValueError(f"Driver luma no soportado: {driver}")
-
-    def display_image(self, image: Image.Image) -> None:
-        self.device.display(image.convert("1"))
-
-    def cleanup(self) -> None:
-        try:
-            self.device.clear()
-        except Exception:
-            pass
-
-
-class DirectPageOLED:
-    """
-    Driver directo por páginas para controladores tipo SSD1306/SH1106/SH1107.
-
-    Sirve para diagnóstico cuando luma no mapea correctamente la pantalla.
+    En vez de escribir solo 12 páginas visibles, escribe las 16 páginas.
+    Esto evita que la pantalla mezcle páginas viejas con nuevas o que la ventana
+    visible muestre solo líneas inferiores del texto.
     """
 
     def __init__(
         self,
         bus: int,
         address: int,
-        width: int,
-        height: int,
-        controller: str,
+        ram_width: int,
+        ram_height: int,
+        visible_width: int,
+        visible_height: int,
+        ram_y_offset: int,
         column_offset: int,
-        page_offset: int,
-        rotate_180: bool,
         contrast: int,
-        multiplex: int,
         start_line: int,
         display_offset: int,
         segment_remap: int,
@@ -179,19 +151,22 @@ class DirectPageOLED:
         self.SMBus = SMBus
         self.bus_number = bus
         self.address = address
-        self.width = width
-        self.height = height
-        self.pages = height // 8
-        self.controller = controller
+
+        self.ram_width = ram_width
+        self.ram_height = ram_height
+        self.ram_pages = ram_height // 8
+
+        self.visible_width = visible_width
+        self.visible_height = visible_height
+        self.ram_y_offset = ram_y_offset
         self.column_offset = column_offset
-        self.page_offset = page_offset
-        self.rotate_180 = rotate_180
+
         self.contrast = max(0, min(255, int(contrast)))
-        self.multiplex = multiplex
-        self.start_line = start_line & 0x3F
+        self.start_line = start_line & 0x7F
         self.display_offset = display_offset & 0x7F
         self.segment_remap = segment_remap
         self.com_scan = com_scan
+
         self.bus = None
         self.connect()
 
@@ -201,6 +176,7 @@ class DirectPageOLED:
                 self.bus.close()
             except Exception:
                 pass
+
         self.bus = self.SMBus(self.bus_number)
         self.init_display()
 
@@ -223,82 +199,84 @@ class DirectPageOLED:
 
     def init_display(self) -> None:
         self.command(0xAE)                  # Display OFF
-        self.command(0xD5, 0x80)            # Clock divide
-        self.command(0xA8, self.multiplex)  # Multiplex
+        self.command(0xD5, 0x50)            # Clock divide
+        self.command(0xA8, 0x7F)            # Multiplex 128 RAM lines
         self.command(0xD3, self.display_offset)
-        self.command(0x40 | self.start_line)
+        self.command(0x40 | (self.start_line & 0x3F))
 
-        if self.controller == "ssd1306":
-            self.command(0x8D, 0x14)        # Charge pump
-        elif self.controller == "sh1107":
-            self.command(0xAD, 0x8B)        # DC-DC SH1107
+        self.command(0xAD, 0x8B)            # DC-DC SH1107
 
-        if self.rotate_180:
-            self.command(0xA0)
-            self.command(0xC0)
-        else:
-            self.command(self.segment_remap)
-            self.command(self.com_scan)
+        self.command(self.segment_remap)    # 0xA0 o 0xA1
+        self.command(self.com_scan)         # 0xC0 o 0xC8
 
-        self.command(0xDA, 0x12)
-        self.command(0x81, self.contrast)
+        self.command(0xDA, 0x12)            # COM pins
+        self.command(0x81, self.contrast)   # Contrast
+        self.command(0xD9, 0x1F)            # Pre-charge
+        self.command(0xDB, 0x35)            # VCOM
+        self.command(0xA4)                  # Resume RAM
+        self.command(0xA6)                  # Normal
+        self.command(0xAF)                  # Display ON
+        self.clear()
 
-        if self.controller == "ssd1306":
-            self.command(0xD9, 0xF1)
-            self.command(0xDB, 0x40)
-        else:
-            self.command(0xD9, 0x1F)
-            self.command(0xDB, 0x35)
-
-        self.command(0xA4)
-        self.command(0xA6)
-        self.command(0xAF)
-        self.clear_all_memory()
-
-    def set_raw_page(self, raw_page: int) -> None:
+    def set_page(self, page: int) -> None:
         col = self.column_offset
-        self.command(0xB0 + raw_page)
+        self.command(0xB0 + page)
         self.command(0x00 + (col & 0x0F))
         self.command(0x10 + ((col >> 4) & 0x0F))
 
-    def clear_all_memory(self) -> None:
-        blank = [0x00] * self.width
-        for page in range(16):
-            try:
-                self.set_raw_page(page)
-                self.data_block(blank)
-            except Exception:
-                pass
+    def clear(self) -> None:
+        blank = [0x00] * self.ram_width
+        for page in range(self.ram_pages):
+            self.set_page(page)
+            self.data_block(blank)
 
-    def display_image_once(self, image: Image.Image) -> None:
-        image = image.convert("1")
+    def make_ram_image(self, visible_image: Image.Image) -> Image.Image:
+        """
+        Inserta la imagen visible 128x96 dentro de la RAM 128x128.
+        Si ram_y_offset pasa de 127, se envuelve con módulo 128.
+        """
+        visible_image = visible_image.convert("1")
+        ram_image = Image.new("1", (self.ram_width, self.ram_height))
 
-        if self.rotate_180:
-            image = image.transpose(Image.ROTATE_180)
+        offset = self.ram_y_offset % self.ram_height
 
-        self.clear_all_memory()
-        pixels = image.load()
+        # Pegado con wrap vertical.
+        remaining = self.ram_height - offset
+        if remaining >= self.visible_height:
+            ram_image.paste(visible_image, (0, offset))
+        else:
+            top_part = visible_image.crop((0, 0, self.visible_width, remaining))
+            bottom_part = visible_image.crop((0, remaining, self.visible_width, self.visible_height))
+            ram_image.paste(top_part, (0, offset))
+            ram_image.paste(bottom_part, (0, 0))
 
-        for page in range(self.pages):
-            self.set_raw_page(self.page_offset + page)
+        return ram_image
+
+    def display_image_once(self, visible_image: Image.Image) -> None:
+        ram_image = self.make_ram_image(visible_image)
+        pixels = ram_image.load()
+
+        for page in range(self.ram_pages):
+            self.set_page(page)
             data = []
             y0 = page * 8
 
-            for x in range(self.width):
+            for x in range(self.ram_width):
                 byte = 0
                 for bit in range(8):
                     y = y0 + bit
-                    if y < self.height and pixels[x, y] != 0:
+                    if pixels[x, y] != 0:
                         byte |= (1 << bit)
                 data.append(byte)
 
             self.data_block(data)
 
-    def display_image(self, image: Image.Image, retries: int = 3) -> None:
+    def display_image(self, visible_image: Image.Image, retries: int = 3) -> None:
         last_error = None
+
         for attempt in range(retries):
             try:
-                self.display_image_once(image)
+                self.display_image_once(visible_image)
                 return
             except OSError as exc:
                 last_error = exc
@@ -314,7 +292,7 @@ class DirectPageOLED:
 
     def cleanup(self) -> None:
         try:
-            self.clear_all_memory()
+            self.clear()
         except Exception:
             pass
 
@@ -322,65 +300,42 @@ class DirectPageOLED:
 class Display:
     def __init__(
         self,
-        driver: str,
         address: int,
         bus: int,
-        width: int,
-        height: int,
+        ram_y_offset: int,
         column_offset: int,
-        page_offset: int,
-        rotate: int,
-        rotate_180: bool,
         contrast: int,
         top_margin: int,
         left_margin: int,
-        multiplex: int,
         start_line: int,
         display_offset: int,
         segment_remap: int,
         com_scan: int,
     ):
-        self.driver = driver
-        self.address = address
-        self.bus = bus
-        self.width = width
-        self.height = height
+        self.visible_width = VISIBLE_WIDTH
+        self.visible_height = VISIBLE_HEIGHT
         self.top_margin = top_margin
         self.left_margin = left_margin
         self.font = ImageFont.load_default()
 
-        if driver in ("ssd1306", "sh1106", "sh1107"):
-            self.device = LumaOLED(
-                driver=driver,
-                bus=bus,
-                address=address,
-                width=width,
-                height=height,
-                rotate=rotate,
-            )
-        elif driver in ("ssd1306-direct", "sh1106-direct", "sh1107-direct"):
-            controller = driver.replace("-direct", "")
-            self.device = DirectPageOLED(
-                bus=bus,
-                address=address,
-                width=width,
-                height=height,
-                controller=controller,
-                column_offset=column_offset,
-                page_offset=page_offset,
-                rotate_180=rotate_180,
-                contrast=contrast,
-                multiplex=multiplex,
-                start_line=start_line,
-                display_offset=display_offset,
-                segment_remap=segment_remap,
-                com_scan=com_scan,
-            )
-        else:
-            raise ValueError(f"Driver no soportado: {driver}")
+        self.device = SH1107FullRAM(
+            bus=bus,
+            address=address,
+            ram_width=RAM_WIDTH,
+            ram_height=RAM_HEIGHT,
+            visible_width=VISIBLE_WIDTH,
+            visible_height=VISIBLE_HEIGHT,
+            ram_y_offset=ram_y_offset,
+            column_offset=column_offset,
+            contrast=contrast,
+            start_line=start_line,
+            display_offset=display_offset,
+            segment_remap=segment_remap,
+            com_scan=com_scan,
+        )
 
     def make_image(self, lines: list[str]) -> Image.Image:
-        image = Image.new("1", (self.width, self.height))
+        image = Image.new("1", (self.visible_width, self.visible_height))
         draw = ImageDraw.Draw(image)
 
         x = self.left_margin
@@ -500,6 +455,23 @@ def show_screen_test() -> None:
     ])
 
 
+def show_calibrate_y() -> None:
+    """
+    Pantalla de calibración:
+    dibuja marcas cada 8 pixeles. Sirve para ver qué zona real del framebuffer
+    aparece en el panel.
+    """
+    image = Image.new("1", (VISIBLE_WIDTH, VISIBLE_HEIGHT))
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+
+    for y in range(0, VISIBLE_HEIGHT, 8):
+        draw.line((0, y, 127, y), fill=255)
+        draw.text((2, y), f"Y{y:02d}", font=font, fill=255)
+
+    display.device.display_image(image)
+
+
 def render() -> None:
     if current_screen == "splash":
         show_splash()
@@ -511,6 +483,8 @@ def render() -> None:
         show_about()
     elif current_screen == "screen-test":
         show_screen_test()
+    elif current_screen == "calibrate-y":
+        show_calibrate_y()
     else:
         show_menu()
 
@@ -652,36 +626,27 @@ def stop_program(signum=None, frame=None) -> None:
 def parse_args():
     parser = argparse.ArgumentParser(description="Contra Espacios OLED + botones test")
 
-    parser.add_argument(
-        "--driver",
-        default="sh1107",
-        choices=[
-            "sh1107",
-            "ssd1306",
-            "sh1106",
-            "ssd1306-direct",
-            "sh1106-direct",
-            "sh1107-direct",
-        ],
-        help="Driver/modelo de OLED. Default: sh1107",
-    )
     parser.add_argument("--address", default="0x3C", help="Dirección I2C. Default: 0x3C")
     parser.add_argument("--bus", default=1, type=int, help="Bus I2C. Default: 1")
-    parser.add_argument("--width", default=DEFAULT_WIDTH, type=int, help="Ancho OLED. Default: 128")
-    parser.add_argument("--height", default=DEFAULT_HEIGHT, type=int, help="Alto OLED. Default: 96")
-    parser.add_argument("--column-offset", default=0, type=int, help="Offset de columna para drivers directos.")
-    parser.add_argument("--page-offset", default=0, type=int, help="Offset de página para drivers directos.")
-    parser.add_argument("--top-margin", default=0, type=int, help="Margen superior en pixeles.")
-    parser.add_argument("--left-margin", default=0, type=int, help="Margen izquierdo en pixeles.")
-    parser.add_argument("--rotate", default=0, type=int, choices=[0, 1, 2, 3], help="Rotación luma.")
-    parser.add_argument("--rotate-180", action="store_true", help="Rotación 180 para drivers directos.")
-    parser.add_argument("--contrast", default=0x7F, type=lambda x: int(x, 0), help="Contraste para drivers directos.")
-    parser.add_argument("--multiplex", default=0x5F, type=lambda x: int(x, 0), help="Multiplex para drivers directos. 0x5F=96px, 0x7F=128px.")
-    parser.add_argument("--start-line", default=0, type=int, help="Start line para drivers directos.")
-    parser.add_argument("--display-offset", default=0, type=int, help="Display offset para drivers directos.")
-    parser.add_argument("--segment-remap", default=0xA1, type=lambda x: int(x, 0), help="Segment remap directo.")
-    parser.add_argument("--com-scan", default=0xC8, type=lambda x: int(x, 0), help="COM scan directo.")
+
+    parser.add_argument(
+        "--ram-y-offset",
+        default=DEFAULT_RAM_Y_OFFSET,
+        type=int,
+        help="Posición vertical del contenido dentro de la RAM 128x128. Default: 64",
+    )
+    parser.add_argument("--column-offset", default=0, type=int, help="Offset de columna.")
+    parser.add_argument("--top-margin", default=0, type=int, help="Margen superior del texto.")
+    parser.add_argument("--left-margin", default=0, type=int, help="Margen izquierdo del texto.")
+
+    parser.add_argument("--contrast", default=0x7F, type=lambda x: int(x, 0), help="Contraste.")
+    parser.add_argument("--start-line", default=0, type=int, help="Start line SH1107.")
+    parser.add_argument("--display-offset", default=0, type=int, help="Display offset SH1107.")
+    parser.add_argument("--segment-remap", default=0xA1, type=lambda x: int(x, 0), help="Segment remap.")
+    parser.add_argument("--com-scan", default=0xC8, type=lambda x: int(x, 0), help="COM scan.")
+
     parser.add_argument("--screen-test", action="store_true", help="Muestra pantalla de prueba.")
+    parser.add_argument("--calibrate-y", action="store_true", help="Muestra marcas Y cada 8 pixeles.")
 
     return parser.parse_args()
 
@@ -692,47 +657,29 @@ def main() -> None:
     args = parse_args()
     address = int(args.address, 16) if isinstance(args.address, str) else args.address
 
-    try:
-        display = Display(
-            driver=args.driver,
-            address=address,
-            bus=args.bus,
-            width=args.width,
-            height=args.height,
-            column_offset=args.column_offset,
-            page_offset=args.page_offset,
-            rotate=args.rotate,
-            rotate_180=args.rotate_180,
-            contrast=args.contrast,
-            top_margin=args.top_margin,
-            left_margin=args.left_margin,
-            multiplex=args.multiplex,
-            start_line=args.start_line,
-            display_offset=args.display_offset,
-            segment_remap=args.segment_remap,
-            com_scan=args.com_scan,
-        )
-    except Exception as exc:
-        print()
-        print("No se pudo inicializar la OLED con esos parámetros.")
-        print(f"Error: {exc}")
-        print()
-        print("Pruebas recomendadas:")
-        print("  python3 oled-test.py --screen-test --driver sh1107")
-        print("  python3 oled-test.py --screen-test --driver ssd1306 --height 64")
-        print("  python3 oled-test.py --screen-test --driver sh1106 --height 64")
-        print("  python3 oled-test.py --screen-test --driver ssd1306-direct")
-        print("  python3 oled-test.py --screen-test --driver sh1106-direct")
-        print("  python3 oled-test.py --screen-test --driver sh1107-direct")
-        print()
-        raise SystemExit(1)
+    display = Display(
+        address=address,
+        bus=args.bus,
+        ram_y_offset=args.ram_y_offset,
+        column_offset=args.column_offset,
+        contrast=args.contrast,
+        top_margin=args.top_margin,
+        left_margin=args.left_margin,
+        start_line=args.start_line,
+        display_offset=args.display_offset,
+        segment_remap=args.segment_remap,
+        com_scan=args.com_scan,
+    )
 
     signal.signal(signal.SIGINT, stop_program)
     signal.signal(signal.SIGTERM, stop_program)
 
     buttons = setup_buttons()
 
-    if args.screen_test:
+    if args.calibrate_y:
+        current_screen = "calibrate-y"
+        render()
+    elif args.screen_test:
         current_screen = "screen-test"
         render()
     else:

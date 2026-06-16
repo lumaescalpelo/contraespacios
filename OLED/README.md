@@ -38,31 +38,45 @@ python3 oled-test.py
 
 ---
 
-## 2. Error corregido
+## 2. Qué cambia esta versión
 
-Si al probar `ssd1306` o `sh1106` aparece:
+Esta versión deja de probar drivers genéricos y se concentra en el problema real observado:
 
-```text
-DeviceDisplayModeError: Unsupported display mode: 128 x 96
-```
+- con `sh1107-direct --multiplex 0x7F`, la pantalla escribe arriba pero en orden raro;
+- aparecen líneas 9 y 10 arriba;
+- luego hay espacios;
+- luego aparecen líneas 4 a 7;
+- con `--display-offset 32`, aparecen líneas 8, 9 y 10 arriba.
 
-no significa que el programa esté roto. Significa que `luma.oled` no acepta `128x96` para esos drivers.
+Eso indica que el problema probablemente sí está en cómo se está escribiendo la memoria de la pantalla.
 
-En `luma.oled`:
-
-- `ssd1306` no soporta `128x96`.
-- `sh1106` no soporta `128x96`.
-- `sh1107` sí es el candidato para `128x96`.
-
-Por eso el default vuelve a ser:
+El SH1107 puede tener una memoria interna de:
 
 ```text
---driver sh1107
+128 x 128
 ```
 
-Para probar `ssd1306` o `sh1106`, hay que hacerlo como diagnóstico usando `--height 64`.
+aunque el panel visible sea:
 
-Sí, el ecosistema OLED decidió que el mismo conector I2C podía esconder varios controladores distintos. Una fiesta, si tu concepto de fiesta incluye tracebacks.
+```text
+128 x 96
+```
+
+La versión anterior escribía principalmente una imagen de 128x96 sobre 12 páginas. Esta versión crea una imagen interna de:
+
+```text
+128 x 128
+```
+
+y escribe las 16 páginas completas de RAM.
+
+Luego coloca el contenido visible 128x96 dentro de esa RAM usando:
+
+```text
+--ram-y-offset
+```
+
+Esto permite encontrar en qué zona de la RAM interna está la ventana visible del panel.
 
 ---
 
@@ -129,7 +143,7 @@ sudo apt install -y python3-lgpio python3-gpiozero python3-pil python3-smbus i2c
 rm -rf .venv
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
-pip install luma.oled pillow smbus2
+pip install pillow smbus2
 ```
 
 ---
@@ -168,15 +182,19 @@ Debe aparecer algo como:
 
 ---
 
-## 8. Prueba principal recomendada
-
-Primero probar:
+## 8. Primera prueba recomendada
 
 ```bash
-python3 oled-test.py --screen-test --driver sh1107
+python3 oled-test.py --screen-test
 ```
 
-Si eso muestra correctamente:
+Esta prueba usa por defecto:
+
+```text
+--ram-y-offset 64
+```
+
+Debe buscar que aparezca:
 
 ```text
 LINEA 1 ARRIBA
@@ -185,107 +203,115 @@ LINEA 3
 ...
 ```
 
-entonces ejecutar menú normal:
+desde la parte superior.
+
+---
+
+## 9. Probar posiciones verticales dentro de la RAM
+
+Probar en este orden:
 
 ```bash
-python3 oled-test.py --driver sh1107
+python3 oled-test.py --screen-test --ram-y-offset 64
+```
+
+```bash
+python3 oled-test.py --screen-test --ram-y-offset 32
+```
+
+```bash
+python3 oled-test.py --screen-test --ram-y-offset 0
+```
+
+```bash
+python3 oled-test.py --screen-test --ram-y-offset 96
+```
+
+```bash
+python3 oled-test.py --screen-test --ram-y-offset 16
+```
+
+```bash
+python3 oled-test.py --screen-test --ram-y-offset 48
+```
+
+```bash
+python3 oled-test.py --screen-test --ram-y-offset 80
+```
+
+El valor correcto es el que muestra la línea 1 arriba y las líneas siguientes en orden.
+
+---
+
+## 10. Calibración vertical
+
+Para ver marcas cada 8 pixeles:
+
+```bash
+python3 oled-test.py --calibrate-y
+```
+
+También se puede combinar con offsets:
+
+```bash
+python3 oled-test.py --calibrate-y --ram-y-offset 64
+```
+
+```bash
+python3 oled-test.py --calibrate-y --ram-y-offset 32
+```
+
+Esto ayuda a identificar qué zona de la RAM está apareciendo físicamente en la pantalla.
+
+---
+
+## 11. Ajustes adicionales
+
+### Display offset
+
+```bash
+python3 oled-test.py --screen-test --display-offset 32
+```
+
+### Start line
+
+```bash
+python3 oled-test.py --screen-test --start-line 32
+```
+
+### Segment remap y COM scan
+
+```bash
+python3 oled-test.py --screen-test --segment-remap 0xA0 --com-scan 0xC0
+```
+
+```bash
+python3 oled-test.py --screen-test --segment-remap 0xA1 --com-scan 0xC8
+```
+
+### Columna
+
+Si el primer pixel sigue cortado:
+
+```bash
+python3 oled-test.py --screen-test --column-offset 1
+```
+
+```bash
+python3 oled-test.py --screen-test --column-offset 2
 ```
 
 ---
 
-## 9. Pruebas diagnósticas con 128x64
+## 12. Ejecutar menú normal
 
-Estas pruebas no usan toda la pantalla. Sirven para saber si el módulo se comporta como `ssd1306` o `sh1106`.
-
-```bash
-python3 oled-test.py --screen-test --driver ssd1306 --height 64
-```
+Cuando encuentres un `ram-y-offset` correcto:
 
 ```bash
-python3 oled-test.py --screen-test --driver sh1106 --height 64
+python3 oled-test.py --ram-y-offset 64
 ```
 
-Si una de estas se ve limpia, pero solo usa una parte de la pantalla, ya sabemos más sobre el controlador real.
-
----
-
-## 10. Pruebas con drivers directos
-
-Si `sh1107` no funciona bien, probar:
-
-```bash
-python3 oled-test.py --screen-test --driver ssd1306-direct
-```
-
-```bash
-python3 oled-test.py --screen-test --driver sh1106-direct
-```
-
-```bash
-python3 oled-test.py --screen-test --driver sh1107-direct
-```
-
----
-
-## 11. Pruebas de orientación y memoria
-
-Para drivers directos:
-
-```bash
-python3 oled-test.py --screen-test --driver sh1107-direct --page-offset 0
-```
-
-```bash
-python3 oled-test.py --screen-test --driver sh1107-direct --page-offset 4
-```
-
-```bash
-python3 oled-test.py --screen-test --driver sh1107-direct --multiplex 0x7F
-```
-
-```bash
-python3 oled-test.py --screen-test --driver sh1107-direct --start-line 32
-```
-
-```bash
-python3 oled-test.py --screen-test --driver sh1107-direct --display-offset 32
-```
-
-Para rotación con `luma`:
-
-```bash
-python3 oled-test.py --screen-test --driver sh1107 --rotate 1
-```
-
-Opciones:
-
-```text
-0
-1
-2
-3
-```
-
----
-
-## 12. Cómo identificar el driver correcto
-
-La pantalla correcta debe mostrar:
-
-```text
-LINEA 1 ARRIBA
-LINEA 2
-LINEA 3
-LINEA 4
-LINEA 5
-...
-```
-
-desde la parte superior, sin basura a la derecha.
-
-Si solo se ven líneas 8, 9 y 10 abajo, ese driver no sirve para este módulo.
-
-Si aparece error `Unsupported display mode: 128 x 96`, ese driver no soporta esa resolución con `luma.oled`.
+Cambiando `64` por el valor que haya funcionado.
 
 ---
 
@@ -332,13 +358,14 @@ Ctrl+C
 - [x] OLED en GPIO2/GPIO3.
 - [x] Botones en GPIO17, GPIO27, GPIO22, GPIO23, GPIO24.
 - [x] Mapeo de botones de izquierda a derecha.
-- [x] Prueba de varios modelos de pantalla.
-- [x] Corrección del error `Unsupported display mode: 128 x 96`.
+- [x] Escritura completa de RAM SH1107 128x128.
+- [x] `--ram-y-offset` para ubicar la ventana visible.
+- [x] Calibración vertical.
 - [x] Uso de LGPIOFactory.
 - [x] Cola de eventos para no escribir OLED desde callbacks.
 - [x] Menú de prueba.
 - [x] Acciones simuladas.
-- [ ] Identificar driver exacto de la OLED.
+- [ ] Encontrar offset correcto para esta OLED.
 - [ ] Integrar captura real de ESP32CAM.
 - [ ] Integrar lectura real de ENS160 + AHT2X.
 - [ ] Integrar generación real de SVG/G-code.
