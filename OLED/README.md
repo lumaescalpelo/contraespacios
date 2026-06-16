@@ -1,53 +1,61 @@
-# Contra Espacios - OLED y botones
+# Contra Espacios - OLED + UDP para Node-RED
 
-Programa de prueba para la pantalla OLED I2C y cinco botones físicos del proyecto **Contra Espacios**.
+Programa principal de interfaz local para **Contra Espacios**.
 
-Archivo principal:
+Archivo:
 
 ```text
-oled-test.py
+OLED/oled-udp.py
 ```
 
-Ruta esperada:
+Este programa usa la misma pantalla OLED y los mismos cinco botones del programa de prueba, pero agrega comunicación UDP local para integrarse con Node-RED.
+
+El flujo general es:
 
 ```text
-~/Documents/GitHub/contraespacios/OLED/oled-test.py
+Botón físico -> OLED/oled-udp.py -> UDP -> Node-RED
+Node-RED -> UDP -> OLED/oled-udp.py -> pantalla OLED
+```
+
+Sí, por fin los botones dejan de ser una pantomima y empiezan a hablar con el resto del sistema. La civilización avanza a 5005 puertos por segundo.
+
+---
+
+## Estructura sugerida
+
+```text
+OLED/
+├── oled-udp.py
+├── README.md
+└── test/
+    ├── oled-test.py
+    └── README.md
 ```
 
 ---
 
-## 1. Forma normal de ejecución
+## Ejecutar
 
-Entrar al directorio del módulo:
+Desde el directorio `OLED`:
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/OLED
-```
-
-Activar entorno:
-
-```bash
 source .venv/bin/activate
-```
-
-Ejecutar:
-
-```bash
-python3 oled-test.py
+python3 oled-udp.py
 ```
 
 ---
 
-## 2. Dependencias necesarias
+## Dependencias importantes
 
-Estas dos líneas son importantes para `gpiozero` en Raspberry Pi OS moderno:
+Estas dos líneas son necesarias para `gpiozero` en Raspberry Pi OS moderno:
 
 ```bash
 sudo apt install -y python3-lgpio python3-gpiozero
 python3 -m venv --system-site-packages .venv
 ```
 
-Instalación completa recomendada desde la carpeta del módulo:
+Instalación completa recomendada:
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/OLED
@@ -59,32 +67,9 @@ source .venv/bin/activate
 pip install pillow smbus2
 ```
 
-La parte importante es `--system-site-packages`, porque permite que el entorno virtual vea `python3-lgpio` y `python3-gpiozero`.
-
 ---
 
-## 3. Qué corrige esta versión
-
-Esta versión conserva el método que funcionó:
-
-```text
-SH1107 con RAM completa 128x128
-```
-
-Aunque la pantalla visible sea de 128x96, el controlador puede trabajar con memoria interna de 128x128. Por eso el programa escribe las 16 páginas completas.
-
-Cambios de esta versión:
-
-- Se mantiene `--ram-y-offset 64`, porque el programa normal sí se mostró correctamente.
-- Se agrega `left_margin = 2` por defecto para evitar que la primera letra se corte. Si `LINEA` se veía como `_INEA`, esto lo corrige.
-- Se acelera un poco la escritura I2C usando bloques de 16 bytes.
-- Se elimina el título del menú para que no se escondan las opciones.
-- En el menú ya no aparece `CONTRA ESPACIOS`, `Menu principal` ni el renglón vacío.
-- El menú muestra directamente las opciones y las instrucciones de botones.
-
----
-
-## 4. Hardware conectado
+## Hardware
 
 ### OLED I2C
 
@@ -101,13 +86,11 @@ Dirección esperada:
 0x3C
 ```
 
----
+### Botones
 
-## 5. Botones
+Los botones están conectados de izquierda a derecha a partir del pin físico 11.
 
-Los botones están conectados de izquierda a derecha a partir del pin físico 11 de la Raspberry Pi.
-
-| Posición física | Pin físico | GPIO | Función |
+| Posición | Pin físico | GPIO | Función |
 |---|---:|---:|---|
 | Botón 1 | 11 | GPIO17 | Arriba / anterior |
 | Botón 2 | 13 | GPIO27 | Abajo / siguiente |
@@ -121,115 +104,144 @@ Cableado esperado:
 GPIO ---- botón ---- GND
 ```
 
-El programa usa resistencias internas pull-up:
+---
 
-```python
-pull_up=True
+## Puertos UDP
+
+Por defecto:
+
+| Dirección | Puerto | Uso |
+|---|---:|---|
+| `127.0.0.1` | `5005` | El programa OLED envía comandos a Node-RED |
+| `127.0.0.1` | `5006` | El programa OLED escucha estado enviado por Node-RED |
+
+Ejecutar con otros puertos:
+
+```bash
+python3 oled-udp.py --udp-send-port 5005 --udp-listen-port 5006
 ```
 
 ---
 
-## 6. Activar I2C
+## Mensajes que OLED envía a Node-RED
 
-```bash
-sudo raspi-config
-```
-
-Ruta:
+Todos los mensajes son JSON por UDP a:
 
 ```text
-Interface Options -> I2C -> Enable
+127.0.0.1:5005
 ```
 
-Reiniciar:
+### Tabla de comandos enviados
 
-```bash
-sudo reboot
+| Acción en OLED | Mensaje enviado | Qué debería hacer Node-RED |
+|---|---|---|
+| Abrir programa | `{"type":"hello","message":"OLED interface online","listen_port":5006}` | Registrar que la interfaz local está activa |
+| Capturar foto | `{"type":"command","command":"capture_photo","label":"Capturar foto"}` | Llamar flujo de ESP32CAM o script de captura |
+| Capturar ambiente | `{"type":"command","command":"capture_environment","label":"Capturar ambiente"}` | Llamar lectura ENS160 + AHT2X |
+| Generar dibujo | `{"type":"command","command":"generate_drawing","label":"Generar dibujo"}` | Generar SVG y G-code |
+| Ejecutar dibujo | `{"type":"command","command":"execute_drawing","label":"Ejecutar dibujo"}` | Enviar G-code a GRBL |
+| Ver estado | `{"type":"command","command":"show_status","label":"Estado"}` | Responder con estado actual |
+| Cerrar programa | `{"type":"bye","message":"OLED interface offline"}` | Registrar cierre de interfaz |
+
+El programa agrega automáticamente:
+
+```json
+{
+  "source": "contraespacios_oled",
+  "timestamp": "YYYY-MM-DDTHH:MM:SS"
+}
 ```
 
 ---
 
-## 7. Confirmar que la pantalla aparece
+## Mensajes que Node-RED puede mandar a OLED
 
-```bash
-i2cdetect -y 1
-```
-
-Debe aparecer algo como:
+Node-RED debe enviar JSON por UDP a:
 
 ```text
-3c
+127.0.0.1:5006
 ```
 
-Si no aparece:
+### Tabla de mensajes recibidos
 
-- revisar VCC,
-- revisar GND,
-- revisar SDA en GPIO2,
-- revisar SCL en GPIO3,
-- confirmar que I2C está activado,
-- probar cables más cortos.
+| Tipo | Ejemplo | Resultado esperado en OLED |
+|---|---|---|
+| `status` | `{"type":"status","step":"photo","state":"running","message":"Capturando foto","progress":20}` | Actualiza pantalla de estado |
+| `progress` | `{"type":"progress","step":"drawing","state":"running","message":"Generando SVG","progress":60}` | Muestra avance |
+| `framework_state` | `{"type":"framework_state","photo":true,"environment":true,"drawing":false,"gcode":false,"executed":false}` | Actualiza banderas internas |
+| `screen` | `{"type":"screen","title":"FOTO","message":"Captura lista"}` | Muestra mensaje personalizado |
+| `reset` | `{"type":"reset"}` | Limpia estado local |
 
 ---
 
-## 8. Probar pantalla
+## Campos reconocidos al recibir estado
+
+| Campo | Tipo | Uso |
+|---|---|---|
+| `type` | texto | `status`, `progress`, `framework_state`, `screen`, `reset` |
+| `step` | texto | Paso actual: `photo`, `environment`, `drawing`, `gcode`, `execute` |
+| `state` | texto | Estado: `idle`, `running`, `done`, `error` |
+| `message` | texto | Mensaje breve para OLED |
+| `progress` | número | Porcentaje de 0 a 100 |
+| `photo` o `photo_done` | booleano | Marca foto como lista |
+| `environment` o `environment_done` | booleano | Marca ambiente como listo |
+| `drawing` o `drawing_done` | booleano | Marca dibujo como listo |
+| `gcode` o `gcode_done` | booleano | Marca G-code como listo |
+| `executed` o `executed_done` | booleano | Marca ejecución como lista |
+| `title` | texto | Título para mensaje tipo `screen` |
+
+---
+
+## Ejemplos de prueba sin Node-RED
+
+En una terminal, correr el programa:
 
 ```bash
-python3 oled-test.py --screen-test
+cd ~/Documents/GitHub/contraespacios/OLED
+source .venv/bin/activate
+python3 oled-udp.py
 ```
 
-Debe mostrar:
-
-```text
-LINEA 1 ARRIBA
-LINEA 2
-LINEA 3
-...
-```
-
-Si todavía se corta la primera letra, aumentar el margen izquierdo:
+En otra terminal, mandar estado simulado:
 
 ```bash
-python3 oled-test.py --screen-test --left-margin 3
+echo '{"type":"status","step":"photo","state":"running","message":"Capturando foto","progress":25}' | nc -u -w1 127.0.0.1 5006
 ```
 
-o:
+Marcar foto lista:
 
 ```bash
-python3 oled-test.py --screen-test --left-margin 4
+echo '{"type":"framework_state","photo":true,"message":"Foto lista","progress":100}' | nc -u -w1 127.0.0.1 5006
 ```
 
-Si queda demasiado separado:
+Mostrar mensaje directo:
 
 ```bash
-python3 oled-test.py --screen-test --left-margin 1
+echo '{"type":"screen","title":"PRUEBA","message":"UDP recibido"}' | nc -u -w1 127.0.0.1 5006
 ```
 
-El default actual es:
+Reiniciar estado:
 
-```text
---left-margin 2
+```bash
+echo '{"type":"reset"}' | nc -u -w1 127.0.0.1 5006
 ```
 
 ---
 
-## 9. No mover esto si el programa normal ya se ve bien
+## Node-RED
 
-El programa usa por defecto:
+En Node-RED, usar:
 
-```text
---ram-y-offset 64
-```
-
-Ese valor se conserva porque fue el que mostró correctamente el programa normal.
-
-Las pruebas con otros offsets pueden verse mal porque están explorando otras zonas de la RAM interna. No significa que haya que cambiar el valor base.
+- nodo `udp in` escuchando puerto `5005` para recibir comandos del OLED;
+- nodo `json` para convertir el mensaje;
+- nodo `switch` para separar por `msg.payload.command`;
+- nodo `udp out` hacia `127.0.0.1:5006` para responder estado al OLED.
 
 ---
 
-## 10. Menú actual
+## Menú en pantalla
 
-El menú ya no muestra encabezados. Ahora se ve así:
+La pantalla de menú solo muestra las opciones. Las instrucciones de botones viven en esta documentación para evitar flickering en la OLED.
 
 ```text
 > Capturar foto
@@ -238,91 +250,19 @@ El menú ya no muestra encabezados. Ahora se ve así:
   Ejecutar dibujo
   Estado
   Acerca de
-
-B1/B2 mover
-B3 ok B4 atras
-B5 estado
-```
-
-Esto permite que el selector y el texto inferior no queden ocultos al llegar al final de la lista.
-
----
-
-## 11. Qué hace cada opción
-
-### Capturar foto
-
-Simula captura de foto.
-
-### Capturar ambiente
-
-Simula lectura ambiental.
-
-### Generar dibujo
-
-Simula generación de SVG y G-code. Requiere foto y ambiente simulados.
-
-### Ejecutar dibujo
-
-Simula ejecución del dibujo. Requiere G-code simulado.
-
-### Estado
-
-Muestra el estado de todos los pasos.
-
-### Acerca de
-
-Muestra una descripción breve del proyecto.
-
----
-
-## 12. Qué hace cada botón
-
-### Botón 1 - GPIO17
-
-Sube en el menú.
-
-### Botón 2 - GPIO27
-
-Baja en el menú.
-
-### Botón 3 - GPIO22
-
-Selecciona la opción marcada.
-
-### Botón 4 - GPIO23
-
-Vuelve al menú.
-
-### Botón 5 - GPIO24
-
-Muestra el estado.
-
----
-
-## 13. Salir del programa
-
-Presionar:
-
-```text
-Ctrl+C
 ```
 
 ---
 
-## 14. Estado de esta prueba
+## Estado de esta versión
 
-- [x] OLED en GPIO2/GPIO3.
-- [x] Botones en GPIO17, GPIO27, GPIO22, GPIO23, GPIO24.
-- [x] Mapeo de botones de izquierda a derecha.
-- [x] Escritura completa de RAM SH1107 128x128.
-- [x] `--ram-y-offset 64` como valor funcional.
-- [x] Margen izquierdo para evitar corte de texto.
-- [x] Menú sin encabezado para evitar ocultar opciones.
-- [x] Uso de LGPIOFactory.
-- [x] Cola de eventos para no escribir OLED desde callbacks.
-- [x] Acciones simuladas.
-- [ ] Integrar captura real de ESP32CAM.
-- [ ] Integrar lectura real de ENS160 + AHT2X.
-- [ ] Integrar generación real de SVG/G-code.
-- [ ] Integrar envío real a GRBL.
+- [x] OLED funcional.
+- [x] Botones funcionales.
+- [x] Menú sin texto extra.
+- [x] UDP de salida hacia Node-RED.
+- [x] UDP de entrada desde Node-RED.
+- [x] Tabla de mensajes enviados y recibidos.
+- [ ] Conectar flujo real de captura de foto.
+- [ ] Conectar flujo real de sensores.
+- [ ] Conectar generación SVG/G-code.
+- [ ] Conectar ejecución GRBL.

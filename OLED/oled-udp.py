@@ -2,25 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-Contra Espacios - oled-test.py
+Contra Espacios - OLED local interface
 
-Prueba de pantalla OLED I2C + 5 botones para Raspberry Pi.
-
-Forma normal:
-
-  cd ~/Documents/GitHub/contraespacios/OLED
-  source .venv/bin/activate
-  python3 oled-test.py
-
-Esta versión usa el enfoque que funcionó en la pantalla:
-  - No escribe solo 96 px de memoria.
-  - Dibuja en una memoria interna completa de 128 px de alto.
-  - Después manda las 16 páginas completas al SH1107.
-  - Permite mover el contenido dentro de esa RAM con --ram-y-offset.
-
-Esto es necesario porque muchas OLED SH1107 128x96 usan una RAM interna
-de 128x128, aunque el panel visible sea de 128x96. Si solo se escriben 12 páginas,
-la pantalla puede mostrar líneas partidas, saltos, espacios en blanco y basura.
+OLED I2C:
+  SDA -> GPIO2
+  SCL -> GPIO3
 
 Botones de izquierda a derecha, empezando en pin físico 11:
   Botón 1: pin físico 11 / GPIO17 -> Arriba / anterior
@@ -33,81 +19,71 @@ Botones de izquierda a derecha, empezando en pin físico 11:
 from __future__ import annotations
 
 import argparse
+import json
 import queue
 import signal
+import socket
+import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Optional
 
 from gpiozero import Button
 from PIL import Image, ImageDraw, ImageFont
 
 
-# ---------------------------------------------------------------------
-# Pines
-# ---------------------------------------------------------------------
-
-PIN_BUTTON_1 = 17  # Pin físico 11
-PIN_BUTTON_2 = 27  # Pin físico 13
-PIN_BUTTON_3 = 22  # Pin físico 15
-PIN_BUTTON_4 = 23  # Pin físico 16
-PIN_BUTTON_5 = 24  # Pin físico 18
+PIN_BUTTON_1 = 17
+PIN_BUTTON_2 = 27
+PIN_BUTTON_3 = 22
+PIN_BUTTON_4 = 23
+PIN_BUTTON_5 = 24
 
 OLED_I2C_BUS = 1
 OLED_I2C_ADDRESS = 0x3C
 
 VISIBLE_WIDTH = 128
 VISIBLE_HEIGHT = 96
-
-# RAM interna típica del SH1107: 128 x 128.
 RAM_WIDTH = 128
 RAM_HEIGHT = 128
 
-# Este valor funcionó correctamente al ejecutar el programa normal.
-# No moverlo salvo que se esté recalibrando otra pantalla.
 DEFAULT_RAM_Y_OFFSET = 64
-
-# Margen izquierdo para evitar que se corte el primer pixel de las letras.
-# Si LINEA se ve como _INEA, este margen es necesario.
 DEFAULT_LEFT_MARGIN = 2
-
-# Margen superior mínimo para aprovechar la pantalla desde arriba.
 DEFAULT_TOP_MARGIN = 0
 
 
-# ---------------------------------------------------------------------
-# Estado
-# ---------------------------------------------------------------------
-
 @dataclass
-class ProjectState:
+class FrameworkState:
     photo_done: bool = False
     environment_done: bool = False
     drawing_done: bool = False
     gcode_done: bool = False
     executed_done: bool = False
+    current_step: str = "inicio"
+    current_state: str = "idle"
     last_message: str = "Sistema iniciado"
+    progress: int = 0
+    last_update: str = ""
 
 
 MENU_ITEMS = [
-    "Capturar foto",
-    "Capturar ambiente",
-    "Generar dibujo",
-    "Ejecutar dibujo",
-    "Estado",
-    "Acerca de",
+    ("Capturar foto", "capture_photo"),
+    ("Capturar ambiente", "capture_environment"),
+    ("Generar dibujo", "generate_drawing"),
+    ("Ejecutar dibujo", "execute_drawing"),
+    ("Estado", "show_status"),
+    ("Acerca de", "show_about"),
 ]
 
-state = ProjectState()
+state = FrameworkState()
 menu_index = 0
 current_screen = "splash"
 running = True
-events: "queue.Queue[str]" = queue.Queue()
+events: "queue.Queue[tuple[str, object]]" = queue.Queue()
 
 
-# ---------------------------------------------------------------------
-# GPIO
-# ---------------------------------------------------------------------
+def now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S")
+
 
 def get_pin_factory():
     try:
@@ -124,19 +100,7 @@ def get_pin_factory():
         raise
 
 
-# ---------------------------------------------------------------------
-# Driver SH1107 usando RAM completa 128x128
-# ---------------------------------------------------------------------
-
 class SH1107FullRAM:
-    """
-    Driver directo SH1107 usando framebuffer interno completo 128x128.
-
-    En vez de escribir solo 12 páginas visibles, escribe las 16 páginas.
-    Esto evita que la pantalla mezcle páginas viejas con nuevas o que la ventana
-    visible muestre solo líneas inferiores del texto.
-    """
-
     def __init__(
         self,
         bus: int,
@@ -158,22 +122,18 @@ class SH1107FullRAM:
         self.SMBus = SMBus
         self.bus_number = bus
         self.address = address
-
         self.ram_width = ram_width
         self.ram_height = ram_height
         self.ram_pages = ram_height // 8
-
         self.visible_width = visible_width
         self.visible_height = visible_height
         self.ram_y_offset = ram_y_offset
         self.column_offset = column_offset
-
         self.contrast = max(0, min(255, int(contrast)))
         self.start_line = start_line & 0x7F
         self.display_offset = display_offset & 0x7F
         self.segment_remap = segment_remap
         self.com_scan = com_scan
-
         self.bus = None
         self.connect()
 
@@ -183,7 +143,6 @@ class SH1107FullRAM:
                 self.bus.close()
             except Exception:
                 pass
-
         self.bus = self.SMBus(self.bus_number)
         self.init_display()
 
@@ -205,24 +164,21 @@ class SH1107FullRAM:
             )
 
     def init_display(self) -> None:
-        self.command(0xAE)                  # Display OFF
-        self.command(0xD5, 0x50)            # Clock divide
-        self.command(0xA8, 0x7F)            # Multiplex 128 RAM lines
+        self.command(0xAE)
+        self.command(0xD5, 0x50)
+        self.command(0xA8, 0x7F)
         self.command(0xD3, self.display_offset)
         self.command(0x40 | (self.start_line & 0x3F))
-
-        self.command(0xAD, 0x8B)            # DC-DC SH1107
-
-        self.command(self.segment_remap)    # 0xA0 o 0xA1
-        self.command(self.com_scan)         # 0xC0 o 0xC8
-
-        self.command(0xDA, 0x12)            # COM pins
-        self.command(0x81, self.contrast)   # Contrast
-        self.command(0xD9, 0x1F)            # Pre-charge
-        self.command(0xDB, 0x35)            # VCOM
-        self.command(0xA4)                  # Resume RAM
-        self.command(0xA6)                  # Normal
-        self.command(0xAF)                  # Display ON
+        self.command(0xAD, 0x8B)
+        self.command(self.segment_remap)
+        self.command(self.com_scan)
+        self.command(0xDA, 0x12)
+        self.command(0x81, self.contrast)
+        self.command(0xD9, 0x1F)
+        self.command(0xDB, 0x35)
+        self.command(0xA4)
+        self.command(0xA6)
+        self.command(0xAF)
         self.clear()
 
     def set_page(self, page: int) -> None:
@@ -238,16 +194,10 @@ class SH1107FullRAM:
             self.data_block(blank)
 
     def make_ram_image(self, visible_image: Image.Image) -> Image.Image:
-        """
-        Inserta la imagen visible 128x96 dentro de la RAM 128x128.
-        Si ram_y_offset pasa de 127, se envuelve con módulo 128.
-        """
         visible_image = visible_image.convert("1")
         ram_image = Image.new("1", (self.ram_width, self.ram_height))
-
         offset = self.ram_y_offset % self.ram_height
 
-        # Pegado con wrap vertical.
         remaining = self.ram_height - offset
         if remaining >= self.visible_height:
             ram_image.paste(visible_image, (0, offset))
@@ -280,7 +230,6 @@ class SH1107FullRAM:
 
     def display_image(self, visible_image: Image.Image, retries: int = 3) -> None:
         last_error = None
-
         for attempt in range(retries):
             try:
                 self.display_image_once(visible_image)
@@ -294,7 +243,6 @@ class SH1107FullRAM:
                     last_error = reconnect_exc
                     print(f"No se pudo reconectar OLED: {reconnect_exc}")
                     time.sleep(0.2)
-
         raise RuntimeError(f"No se pudo actualizar OLED. Último error: {last_error}")
 
     def cleanup(self) -> None:
@@ -344,15 +292,12 @@ class Display:
     def make_image(self, lines: list[str]) -> Image.Image:
         image = Image.new("1", (self.visible_width, self.visible_height))
         draw = ImageDraw.Draw(image)
-
         x = self.left_margin
         y = self.top_margin
         line_height = 9
-
         for line in [str(line) for line in lines][:10]:
             draw.text((x, y), line[:21], font=self.font, fill=255)
             y += line_height
-
         return image
 
     def show(self, lines: list[str]) -> None:
@@ -365,61 +310,78 @@ class Display:
 display: Optional[Display] = None
 
 
-# ---------------------------------------------------------------------
-# Pantallas
-# ---------------------------------------------------------------------
+class UDPBridge:
+    def __init__(self, send_host: str, send_port: int, listen_host: str, listen_port: int):
+        self.send_addr = (send_host, send_port)
+        self.listen_addr = (listen_host, listen_port)
+        self.send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.listen_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.listen_socket.bind(self.listen_addr)
+        self.listen_socket.settimeout(0.2)
+        self.thread = threading.Thread(target=self.listen_loop, daemon=True)
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def send(self, payload: dict) -> None:
+        payload.setdefault("source", "contraespacios_oled")
+        payload.setdefault("timestamp", now_iso())
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_socket.sendto(data, self.send_addr)
+
+    def listen_loop(self) -> None:
+        while running:
+            try:
+                data, addr = self.listen_socket.recvfrom(4096)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+            try:
+                payload = json.loads(data.decode("utf-8"))
+                events.put(("udp", payload))
+            except Exception as exc:
+                events.put(("udp_error", f"UDP inválido: {exc}"))
+
+
+udp: Optional[UDPBridge] = None
+
 
 def show_splash() -> None:
     display.show([
         "CONTRA ESPACIOS",
         "",
-        "Dibujo 16mm",
-        "Ambiente + CNC",
+        "OLED + UDP",
+        "Node-RED local",
         "",
         "Amaranta",
         "Chikiframe",
         "",
-        "OLED + botones",
+        "Iniciando...",
     ])
 
 
 def show_menu() -> None:
-    """
-    Vista de menú optimizada para OLED 128x96.
-
-    Se quitaron:
-    - título CONTRA ESPACIOS,
-    - texto Menu principal,
-    - renglón vacío.
-
-    Así caben todas las opciones y el selector no queda oculto al final.
-    """
     lines = []
-
-    for i, item in enumerate(MENU_ITEMS):
+    for i, (label, _command) in enumerate(MENU_ITEMS):
         prefix = ">" if i == menu_index else " "
-        lines.append(f"{prefix} {item}")
-
-    lines.append("")
-    lines.append("B1/B2 mover")
-    lines.append("B3 ok B4 atras")
-    lines.append("B5 estado")
-
+        lines.append(f"{prefix} {label}")
     display.show(lines)
 
 
 def show_status() -> None:
     display.show([
-        "ESTADO",
+        "ESTADO FRAMEWORK",
+        f"Paso: {state.current_step[:14]}",
+        f"Modo: {state.current_state[:14]}",
         f"Foto:  {'OK' if state.photo_done else '--'}",
         f"Amb:   {'OK' if state.environment_done else '--'}",
-        f"SVG:   {'OK' if state.drawing_done else '--'}",
         f"Gcode: {'OK' if state.gcode_done else '--'}",
         f"Draw:  {'OK' if state.executed_done else '--'}",
-        "",
+        f"Prog:  {state.progress}%",
         state.last_message[:21],
-        "",
-        "B4 volver",
     ])
 
 
@@ -427,14 +389,12 @@ def show_about() -> None:
     display.show([
         "ACERCA DE",
         "Contra Espacios",
-        "",
-        "Sistema portatil",
-        "que traduce",
-        "ambiente + foto",
-        "en dibujo sobre",
-        "cine 16mm",
-        "",
-        "B4 volver",
+        "Interfaz local",
+        "OLED + botones",
+        "envia comandos",
+        "UDP a Node-RED",
+        "y muestra estado",
+        "del framework.",
     ])
 
 
@@ -444,11 +404,22 @@ def show_action(title: str, message: str) -> None:
         "",
         message[:21],
         "",
-        "Esta prueba aun",
-        "no ejecuta una",
-        "accion real.",
+        "Comando enviado",
+        "por UDP local.",
         "",
-        "B4 volver",
+        "Esperando estado...",
+    ])
+
+
+def show_screen_message(title: str, message: str) -> None:
+    display.show([
+        title[:21],
+        "",
+        message[:21],
+        "",
+        state.current_step[:21],
+        state.current_state[:21],
+        f"Prog: {state.progress}%",
     ])
 
 
@@ -467,23 +438,6 @@ def show_screen_test() -> None:
     ])
 
 
-def show_calibrate_y() -> None:
-    """
-    Pantalla de calibración:
-    dibuja marcas cada 8 pixeles. Sirve para ver qué zona real del framebuffer
-    aparece en el panel.
-    """
-    image = Image.new("1", (VISIBLE_WIDTH, VISIBLE_HEIGHT))
-    draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default()
-
-    for y in range(0, VISIBLE_HEIGHT, 8):
-        draw.line((0, y, 127, y), fill=255)
-        draw.text((2, y), f"Y{y:02d}", font=font, fill=255)
-
-    display.device.display_image(image)
-
-
 def render() -> None:
     if current_screen == "splash":
         show_splash()
@@ -495,79 +449,115 @@ def render() -> None:
         show_about()
     elif current_screen == "screen-test":
         show_screen_test()
-    elif current_screen == "calibrate-y":
-        show_calibrate_y()
     else:
         show_menu()
 
 
-# ---------------------------------------------------------------------
-# Acciones simuladas
-# ---------------------------------------------------------------------
-
-def simulate_photo() -> None:
-    state.photo_done = True
-    state.last_message = "Foto simulada OK"
-    show_action("1 FOTO", "Captura simulada")
-
-
-def simulate_environment() -> None:
-    state.environment_done = True
-    state.last_message = "Ambiente sim OK"
-    show_action("2 AMBIENTE", "Lectura simulada")
-
-
-def simulate_generate() -> None:
-    if not state.photo_done or not state.environment_done:
-        state.last_message = "Falta foto/amb"
-        show_action("3 GENERAR", "Falta foto/amb")
+def send_command(command: str, label: str) -> None:
+    if udp is None:
         return
 
-    state.drawing_done = True
-    state.gcode_done = True
-    state.last_message = "SVG/Gcode sim OK"
-    show_action("3 GENERAR", "SVG y Gcode OK")
-
-
-def simulate_execute() -> None:
-    if not state.gcode_done:
-        state.last_message = "Falta Gcode"
-        show_action("4 DIBUJAR", "Falta Gcode")
-        return
-
-    state.executed_done = True
-    state.last_message = "Dibujo sim OK"
-    show_action("4 DIBUJAR", "Ejecucion OK")
+    udp.send({
+        "type": "command",
+        "command": command,
+        "label": label,
+    })
 
 
 def select_current_item() -> None:
     global current_screen
+    label, command = MENU_ITEMS[menu_index]
 
-    item = MENU_ITEMS[menu_index]
-
-    if item == "Capturar foto":
-        current_screen = "action"
-        simulate_photo()
-    elif item == "Capturar ambiente":
-        current_screen = "action"
-        simulate_environment()
-    elif item == "Generar dibujo":
-        current_screen = "action"
-        simulate_generate()
-    elif item == "Ejecutar dibujo":
-        current_screen = "action"
-        simulate_execute()
-    elif item == "Estado":
+    if command == "show_status":
         current_screen = "status"
         show_status()
-    elif item == "Acerca de":
+        send_command(command, label)
+        return
+
+    if command == "show_about":
         current_screen = "about"
         show_about()
+        return
+
+    state.current_step = command
+    state.current_state = "sent"
+    state.last_message = f"Enviado: {label}"
+    state.last_update = now_iso()
+
+    current_screen = "action"
+    show_action(label, "Enviado a Node-RED")
+    send_command(command, label)
 
 
-# ---------------------------------------------------------------------
-# Eventos de botones
-# ---------------------------------------------------------------------
+def update_state_from_udp(payload: dict) -> None:
+    global current_screen
+
+    msg_type = payload.get("type", "status")
+
+    if msg_type in ("status", "framework_state", "progress"):
+        if "photo_done" in payload:
+            state.photo_done = bool(payload["photo_done"])
+        if "environment_done" in payload:
+            state.environment_done = bool(payload["environment_done"])
+        if "drawing_done" in payload:
+            state.drawing_done = bool(payload["drawing_done"])
+        if "gcode_done" in payload:
+            state.gcode_done = bool(payload["gcode_done"])
+        if "executed_done" in payload:
+            state.executed_done = bool(payload["executed_done"])
+
+        # Alias cortos para que Node-RED pueda mandar mensajes más cómodos.
+        if "photo" in payload:
+            state.photo_done = bool(payload["photo"])
+        if "environment" in payload:
+            state.environment_done = bool(payload["environment"])
+        if "drawing" in payload:
+            state.drawing_done = bool(payload["drawing"])
+        if "gcode" in payload:
+            state.gcode_done = bool(payload["gcode"])
+        if "executed" in payload:
+            state.executed_done = bool(payload["executed"])
+
+        if "step" in payload:
+            state.current_step = str(payload["step"])
+        if "state" in payload:
+            state.current_state = str(payload["state"])
+        if "message" in payload:
+            state.last_message = str(payload["message"])
+        if "progress" in payload:
+            try:
+                state.progress = max(0, min(100, int(payload["progress"])))
+            except Exception:
+                pass
+
+        state.last_update = now_iso()
+
+        # Si Node-RED avisa algo, mostrar estado inmediatamente.
+        current_screen = "status"
+        show_status()
+
+    elif msg_type == "screen":
+        title = str(payload.get("title", "MENSAJE"))
+        message = str(payload.get("message", ""))
+        state.last_message = message
+        state.last_update = now_iso()
+        current_screen = "message"
+        show_screen_message(title, message)
+
+    elif msg_type == "reset":
+        state.photo_done = False
+        state.environment_done = False
+        state.drawing_done = False
+        state.gcode_done = False
+        state.executed_done = False
+        state.current_step = "inicio"
+        state.current_state = "idle"
+        state.last_message = "Sistema reiniciado"
+        state.progress = 0
+        state.last_update = now_iso()
+        current_screen = "status"
+        show_status()
+
 
 def handle_event(event: str) -> None:
     global menu_index, current_screen
@@ -578,14 +568,12 @@ def handle_event(event: str) -> None:
         else:
             menu_index = (menu_index - 1) % len(MENU_ITEMS)
         render()
-
     elif event == "down":
         if current_screen != "menu":
             current_screen = "menu"
         else:
             menu_index = (menu_index + 1) % len(MENU_ITEMS)
         render()
-
     elif event == "select":
         if current_screen == "splash":
             current_screen = "menu"
@@ -595,20 +583,18 @@ def handle_event(event: str) -> None:
         else:
             current_screen = "menu"
             render()
-
     elif event == "back":
         if current_screen != "splash":
             current_screen = "menu"
             render()
-
     elif event == "status":
         current_screen = "status"
         show_status()
+        send_command("show_status", "Estado")
 
 
 def setup_buttons() -> list[Button]:
     pin_factory = get_pin_factory()
-
     buttons = [
         Button(PIN_BUTTON_1, pull_up=True, bounce_time=0.22, pin_factory=pin_factory),
         Button(PIN_BUTTON_2, pull_up=True, bounce_time=0.22, pin_factory=pin_factory),
@@ -616,19 +602,13 @@ def setup_buttons() -> list[Button]:
         Button(PIN_BUTTON_4, pull_up=True, bounce_time=0.22, pin_factory=pin_factory),
         Button(PIN_BUTTON_5, pull_up=True, bounce_time=0.22, pin_factory=pin_factory),
     ]
-
-    buttons[0].when_pressed = lambda: events.put("up")
-    buttons[1].when_pressed = lambda: events.put("down")
-    buttons[2].when_pressed = lambda: events.put("select")
-    buttons[3].when_pressed = lambda: events.put("back")
-    buttons[4].when_pressed = lambda: events.put("status")
-
+    buttons[0].when_pressed = lambda: events.put(("button", "up"))
+    buttons[1].when_pressed = lambda: events.put(("button", "down"))
+    buttons[2].when_pressed = lambda: events.put(("button", "select"))
+    buttons[3].when_pressed = lambda: events.put(("button", "back"))
+    buttons[4].when_pressed = lambda: events.put(("button", "status"))
     return buttons
 
-
-# ---------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------
 
 def stop_program(signum=None, frame=None) -> None:
     global running
@@ -636,36 +616,30 @@ def stop_program(signum=None, frame=None) -> None:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Contra Espacios OLED + botones test")
+    parser = argparse.ArgumentParser(description="Contra Espacios OLED UDP interface")
+    parser.add_argument("--address", default="0x3C")
+    parser.add_argument("--bus", default=1, type=int)
+    parser.add_argument("--ram-y-offset", default=DEFAULT_RAM_Y_OFFSET, type=int)
+    parser.add_argument("--column-offset", default=0, type=int)
+    parser.add_argument("--top-margin", default=DEFAULT_TOP_MARGIN, type=int)
+    parser.add_argument("--left-margin", default=DEFAULT_LEFT_MARGIN, type=int)
+    parser.add_argument("--contrast", default=0x7F, type=lambda x: int(x, 0))
+    parser.add_argument("--start-line", default=0, type=int)
+    parser.add_argument("--display-offset", default=0, type=int)
+    parser.add_argument("--segment-remap", default=0xA1, type=lambda x: int(x, 0))
+    parser.add_argument("--com-scan", default=0xC8, type=lambda x: int(x, 0))
+    parser.add_argument("--screen-test", action="store_true")
 
-    parser.add_argument("--address", default="0x3C", help="Dirección I2C. Default: 0x3C")
-    parser.add_argument("--bus", default=1, type=int, help="Bus I2C. Default: 1")
-
-    parser.add_argument(
-        "--ram-y-offset",
-        default=DEFAULT_RAM_Y_OFFSET,
-        type=int,
-        help="Posición vertical del contenido dentro de la RAM 128x128. Default: 64",
-    )
-    parser.add_argument("--column-offset", default=0, type=int, help="Offset de columna.")
-    parser.add_argument("--top-margin", default=DEFAULT_TOP_MARGIN, type=int, help="Margen superior del texto. Default: 0")
-    parser.add_argument("--left-margin", default=DEFAULT_LEFT_MARGIN, type=int, help="Margen izquierdo del texto. Default: 2")
-
-    parser.add_argument("--contrast", default=0x7F, type=lambda x: int(x, 0), help="Contraste.")
-    parser.add_argument("--start-line", default=0, type=int, help="Start line SH1107.")
-    parser.add_argument("--display-offset", default=0, type=int, help="Display offset SH1107.")
-    parser.add_argument("--segment-remap", default=0xA1, type=lambda x: int(x, 0), help="Segment remap.")
-    parser.add_argument("--com-scan", default=0xC8, type=lambda x: int(x, 0), help="COM scan.")
-
-    parser.add_argument("--screen-test", action="store_true", help="Muestra pantalla de prueba.")
-    parser.add_argument("--calibrate-y", action="store_true", help="Muestra marcas Y cada 8 pixeles.")
+    parser.add_argument("--udp-send-host", default="127.0.0.1")
+    parser.add_argument("--udp-send-port", default=5005, type=int)
+    parser.add_argument("--udp-listen-host", default="127.0.0.1")
+    parser.add_argument("--udp-listen-port", default=5006, type=int)
 
     return parser.parse_args()
 
 
 def main() -> None:
-    global current_screen, display
-
+    global current_screen, display, udp
     args = parse_args()
     address = int(args.address, 16) if isinstance(args.address, str) else args.address
 
@@ -683,30 +657,52 @@ def main() -> None:
         com_scan=args.com_scan,
     )
 
+    udp = UDPBridge(
+        send_host=args.udp_send_host,
+        send_port=args.udp_send_port,
+        listen_host=args.udp_listen_host,
+        listen_port=args.udp_listen_port,
+    )
+    udp.start()
+
     signal.signal(signal.SIGINT, stop_program)
     signal.signal(signal.SIGTERM, stop_program)
-
     buttons = setup_buttons()
 
-    if args.calibrate_y:
-        current_screen = "calibrate-y"
-        render()
-    elif args.screen_test:
+    udp.send({
+        "type": "hello",
+        "message": "OLED interface online",
+        "listen_port": args.udp_listen_port,
+    })
+
+    if args.screen_test:
         current_screen = "screen-test"
         render()
     else:
         current_screen = "splash"
         render()
-        time.sleep(2.5)
+        time.sleep(2.0)
         current_screen = "menu"
         render()
 
     while running:
         try:
-            event = events.get(timeout=0.1)
-            handle_event(event)
+            kind, payload = events.get(timeout=0.1)
+            if kind == "button":
+                handle_event(payload)
+            elif kind == "udp":
+                update_state_from_udp(payload)
+            elif kind == "udp_error":
+                state.last_message = str(payload)
+                current_screen = "status"
+                show_status()
         except queue.Empty:
             pass
+
+    try:
+        udp.send({"type": "bye", "message": "OLED interface offline"})
+    except Exception:
+        pass
 
     try:
         display.cleanup()
