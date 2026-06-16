@@ -38,49 +38,53 @@ python3 oled-test.py
 
 ---
 
-## 2. Qué cambia esta versión
+## 2. Dependencias necesarias
 
-Esta versión deja de probar drivers genéricos y se concentra en el problema real observado:
+Estas dos líneas son importantes para `gpiozero` en Raspberry Pi OS moderno:
 
-- con `sh1107-direct --multiplex 0x7F`, la pantalla escribe arriba pero en orden raro;
-- aparecen líneas 9 y 10 arriba;
-- luego hay espacios;
-- luego aparecen líneas 4 a 7;
-- con `--display-offset 32`, aparecen líneas 8, 9 y 10 arriba.
-
-Eso indica que el problema probablemente sí está en cómo se está escribiendo la memoria de la pantalla.
-
-El SH1107 puede tener una memoria interna de:
-
-```text
-128 x 128
+```bash
+sudo apt install -y python3-lgpio python3-gpiozero
+python3 -m venv --system-site-packages .venv
 ```
 
-aunque el panel visible sea:
+Instalación completa recomendada desde la carpeta del módulo:
 
-```text
-128 x 96
+```bash
+cd ~/Documents/GitHub/contraespacios/OLED
+sudo apt update
+sudo apt install -y python3-lgpio python3-gpiozero python3-pil python3-smbus i2c-tools
+rm -rf .venv
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+pip install pillow smbus2
 ```
 
-La versión anterior escribía principalmente una imagen de 128x96 sobre 12 páginas. Esta versión crea una imagen interna de:
-
-```text
-128 x 128
-```
-
-y escribe las 16 páginas completas de RAM.
-
-Luego coloca el contenido visible 128x96 dentro de esa RAM usando:
-
-```text
---ram-y-offset
-```
-
-Esto permite encontrar en qué zona de la RAM interna está la ventana visible del panel.
+La parte importante es `--system-site-packages`, porque permite que el entorno virtual vea `python3-lgpio` y `python3-gpiozero`.
 
 ---
 
-## 3. Hardware conectado
+## 3. Qué corrige esta versión
+
+Esta versión conserva el método que funcionó:
+
+```text
+SH1107 con RAM completa 128x128
+```
+
+Aunque la pantalla visible sea de 128x96, el controlador puede trabajar con memoria interna de 128x128. Por eso el programa escribe las 16 páginas completas.
+
+Cambios de esta versión:
+
+- Se mantiene `--ram-y-offset 64`, porque el programa normal sí se mostró correctamente.
+- Se agrega `left_margin = 2` por defecto para evitar que la primera letra se corte. Si `LINEA` se veía como `_INEA`, esto lo corrige.
+- Se acelera un poco la escritura I2C usando bloques de 16 bytes.
+- Se elimina el título del menú para que no se escondan las opciones.
+- En el menú ya no aparece `CONTRA ESPACIOS`, `Menu principal` ni el renglón vacío.
+- El menú muestra directamente las opciones y las instrucciones de botones.
+
+---
+
+## 4. Hardware conectado
 
 ### OLED I2C
 
@@ -99,11 +103,11 @@ Dirección esperada:
 
 ---
 
-## 4. Botones
+## 5. Botones
 
 Los botones están conectados de izquierda a derecha a partir del pin físico 11 de la Raspberry Pi.
 
-| Posición física | Pin físico | GPIO | Función en menú |
+| Posición física | Pin físico | GPIO | Función |
 |---|---:|---:|---|
 | Botón 1 | 11 | GPIO17 | Arriba / anterior |
 | Botón 2 | 13 | GPIO27 | Abajo / siguiente |
@@ -121,29 +125,6 @@ El programa usa resistencias internas pull-up:
 
 ```python
 pull_up=True
-```
-
----
-
-## 5. Dependencias necesarias
-
-Estas líneas son importantes para `gpiozero` en Raspberry Pi OS moderno:
-
-```bash
-sudo apt install -y python3-lgpio python3-gpiozero
-python3 -m venv --system-site-packages .venv
-```
-
-Instalación completa recomendada:
-
-```bash
-cd ~/Documents/GitHub/contraespacios/OLED
-sudo apt update
-sudo apt install -y python3-lgpio python3-gpiozero python3-pil python3-smbus i2c-tools
-rm -rf .venv
-python3 -m venv --system-site-packages .venv
-source .venv/bin/activate
-pip install pillow smbus2
 ```
 
 ---
@@ -180,21 +161,24 @@ Debe aparecer algo como:
 3c
 ```
 
+Si no aparece:
+
+- revisar VCC,
+- revisar GND,
+- revisar SDA en GPIO2,
+- revisar SCL en GPIO3,
+- confirmar que I2C está activado,
+- probar cables más cortos.
+
 ---
 
-## 8. Primera prueba recomendada
+## 8. Probar pantalla
 
 ```bash
 python3 oled-test.py --screen-test
 ```
 
-Esta prueba usa por defecto:
-
-```text
---ram-y-offset 64
-```
-
-Debe buscar que aparezca:
+Debe mostrar:
 
 ```text
 LINEA 1 ARRIBA
@@ -203,119 +187,68 @@ LINEA 3
 ...
 ```
 
-desde la parte superior.
-
----
-
-## 9. Probar posiciones verticales dentro de la RAM
-
-Probar en este orden:
+Si todavía se corta la primera letra, aumentar el margen izquierdo:
 
 ```bash
-python3 oled-test.py --screen-test --ram-y-offset 64
+python3 oled-test.py --screen-test --left-margin 3
 ```
 
+o:
+
 ```bash
-python3 oled-test.py --screen-test --ram-y-offset 32
+python3 oled-test.py --screen-test --left-margin 4
 ```
 
+Si queda demasiado separado:
+
 ```bash
-python3 oled-test.py --screen-test --ram-y-offset 0
+python3 oled-test.py --screen-test --left-margin 1
 ```
 
-```bash
-python3 oled-test.py --screen-test --ram-y-offset 96
-```
+El default actual es:
 
-```bash
-python3 oled-test.py --screen-test --ram-y-offset 16
-```
-
-```bash
-python3 oled-test.py --screen-test --ram-y-offset 48
-```
-
-```bash
-python3 oled-test.py --screen-test --ram-y-offset 80
-```
-
-El valor correcto es el que muestra la línea 1 arriba y las líneas siguientes en orden.
-
----
-
-## 10. Calibración vertical
-
-Para ver marcas cada 8 pixeles:
-
-```bash
-python3 oled-test.py --calibrate-y
-```
-
-También se puede combinar con offsets:
-
-```bash
-python3 oled-test.py --calibrate-y --ram-y-offset 64
-```
-
-```bash
-python3 oled-test.py --calibrate-y --ram-y-offset 32
-```
-
-Esto ayuda a identificar qué zona de la RAM está apareciendo físicamente en la pantalla.
-
----
-
-## 11. Ajustes adicionales
-
-### Display offset
-
-```bash
-python3 oled-test.py --screen-test --display-offset 32
-```
-
-### Start line
-
-```bash
-python3 oled-test.py --screen-test --start-line 32
-```
-
-### Segment remap y COM scan
-
-```bash
-python3 oled-test.py --screen-test --segment-remap 0xA0 --com-scan 0xC0
-```
-
-```bash
-python3 oled-test.py --screen-test --segment-remap 0xA1 --com-scan 0xC8
-```
-
-### Columna
-
-Si el primer pixel sigue cortado:
-
-```bash
-python3 oled-test.py --screen-test --column-offset 1
-```
-
-```bash
-python3 oled-test.py --screen-test --column-offset 2
+```text
+--left-margin 2
 ```
 
 ---
 
-## 12. Ejecutar menú normal
+## 9. No mover esto si el programa normal ya se ve bien
 
-Cuando encuentres un `ram-y-offset` correcto:
+El programa usa por defecto:
 
-```bash
-python3 oled-test.py --ram-y-offset 64
+```text
+--ram-y-offset 64
 ```
 
-Cambiando `64` por el valor que haya funcionado.
+Ese valor se conserva porque fue el que mostró correctamente el programa normal.
+
+Las pruebas con otros offsets pueden verse mal porque están explorando otras zonas de la RAM interna. No significa que haya que cambiar el valor base.
 
 ---
 
-## 13. Menú actual
+## 10. Menú actual
+
+El menú ya no muestra encabezados. Ahora se ve así:
+
+```text
+> Capturar foto
+  Capturar ambiente
+  Generar dibujo
+  Ejecutar dibujo
+  Estado
+  Acerca de
+
+B1/B2 mover
+B3 ok B4 atras
+B5 estado
+```
+
+Esto permite que el selector y el texto inferior no queden ocultos al llegar al final de la lista.
+
+---
+
+## 11. Qué hace cada opción
 
 ### Capturar foto
 
@@ -343,7 +276,31 @@ Muestra una descripción breve del proyecto.
 
 ---
 
-## 14. Salir del programa
+## 12. Qué hace cada botón
+
+### Botón 1 - GPIO17
+
+Sube en el menú.
+
+### Botón 2 - GPIO27
+
+Baja en el menú.
+
+### Botón 3 - GPIO22
+
+Selecciona la opción marcada.
+
+### Botón 4 - GPIO23
+
+Vuelve al menú.
+
+### Botón 5 - GPIO24
+
+Muestra el estado.
+
+---
+
+## 13. Salir del programa
 
 Presionar:
 
@@ -353,19 +310,18 @@ Ctrl+C
 
 ---
 
-## 15. Estado de esta prueba
+## 14. Estado de esta prueba
 
 - [x] OLED en GPIO2/GPIO3.
 - [x] Botones en GPIO17, GPIO27, GPIO22, GPIO23, GPIO24.
 - [x] Mapeo de botones de izquierda a derecha.
 - [x] Escritura completa de RAM SH1107 128x128.
-- [x] `--ram-y-offset` para ubicar la ventana visible.
-- [x] Calibración vertical.
+- [x] `--ram-y-offset 64` como valor funcional.
+- [x] Margen izquierdo para evitar corte de texto.
+- [x] Menú sin encabezado para evitar ocultar opciones.
 - [x] Uso de LGPIOFactory.
 - [x] Cola de eventos para no escribir OLED desde callbacks.
-- [x] Menú de prueba.
 - [x] Acciones simuladas.
-- [ ] Encontrar offset correcto para esta OLED.
 - [ ] Integrar captura real de ESP32CAM.
 - [ ] Integrar lectura real de ENS160 + AHT2X.
 - [ ] Integrar generación real de SVG/G-code.

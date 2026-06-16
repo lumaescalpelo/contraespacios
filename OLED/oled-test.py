@@ -12,7 +12,7 @@ Forma normal:
   source .venv/bin/activate
   python3 oled-test.py
 
-Esta versión corrige el enfoque anterior:
+Esta versión usa el enfoque que funcionó en la pantalla:
   - No escribe solo 96 px de memoria.
   - Dibuja en una memoria interna completa de 128 px de alto.
   - Después manda las 16 páginas completas al SH1107.
@@ -63,9 +63,16 @@ VISIBLE_HEIGHT = 96
 RAM_WIDTH = 128
 RAM_HEIGHT = 128
 
-# Por lo que reportaste, tu pantalla parece estar mostrando una ventana desplazada.
-# Este valor se puede ajustar. Si no queda bien, probar 0, 32, 64, 96.
+# Este valor funcionó correctamente al ejecutar el programa normal.
+# No moverlo salvo que se esté recalibrando otra pantalla.
 DEFAULT_RAM_Y_OFFSET = 64
+
+# Margen izquierdo para evitar que se corte el primer pixel de las letras.
+# Si LINEA se ve como _INEA, este margen es necesario.
+DEFAULT_LEFT_MARGIN = 2
+
+# Margen superior mínimo para aprovechar la pantalla desde arriba.
+DEFAULT_TOP_MARGIN = 0
 
 
 # ---------------------------------------------------------------------
@@ -189,7 +196,7 @@ class SH1107FullRAM:
             self.bus.write_byte_data(self.address, 0x00, cmd & 0xFF)
 
     def data_block(self, data: list[int]) -> None:
-        block_size = 8
+        block_size = 16
         for i in range(0, len(data), block_size):
             self.bus.write_i2c_block_data(
                 self.address,
@@ -377,22 +384,27 @@ def show_splash() -> None:
 
 
 def show_menu() -> None:
-    visible_count = 5
-    start = max(0, min(menu_index - 2, len(MENU_ITEMS) - visible_count))
-    visible = MENU_ITEMS[start:start + visible_count]
+    """
+    Vista de menú optimizada para OLED 128x96.
 
-    lines = [
-        "CONTRA ESPACIOS",
-        "Menu principal",
-        "",
-    ]
+    Se quitaron:
+    - título CONTRA ESPACIOS,
+    - texto Menu principal,
+    - renglón vacío.
 
-    for i, item in enumerate(visible, start=start):
+    Así caben todas las opciones y el selector no queda oculto al final.
+    """
+    lines = []
+
+    for i, item in enumerate(MENU_ITEMS):
         prefix = ">" if i == menu_index else " "
         lines.append(f"{prefix} {item}")
 
     lines.append("")
-    lines.append("B3 OK  B4 volver")
+    lines.append("B1/B2 mover")
+    lines.append("B3 ok B4 atras")
+    lines.append("B5 estado")
+
     display.show(lines)
 
 
@@ -636,8 +648,8 @@ def parse_args():
         help="Posición vertical del contenido dentro de la RAM 128x128. Default: 64",
     )
     parser.add_argument("--column-offset", default=0, type=int, help="Offset de columna.")
-    parser.add_argument("--top-margin", default=0, type=int, help="Margen superior del texto.")
-    parser.add_argument("--left-margin", default=0, type=int, help="Margen izquierdo del texto.")
+    parser.add_argument("--top-margin", default=DEFAULT_TOP_MARGIN, type=int, help="Margen superior del texto. Default: 0")
+    parser.add_argument("--left-margin", default=DEFAULT_LEFT_MARGIN, type=int, help="Margen izquierdo del texto. Default: 2")
 
     parser.add_argument("--contrast", default=0x7F, type=lambda x: int(x, 0), help="Contraste.")
     parser.add_argument("--start-line", default=0, type=int, help="Start line SH1107.")
