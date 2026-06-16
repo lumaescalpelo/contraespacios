@@ -2,9 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Contra Espacios - OLED + 5 botones - prueba de menú
-
-Programa de prueba para Raspberry Pi.
+Contra Espacios - OLED + 5 botones - prueba de menú.
 
 OLED I2C:
   SDA -> GPIO2
@@ -15,21 +13,10 @@ Botones:
   GPIO27 -> abajo / siguiente
   GPIO22 -> seleccionar
   GPIO23 -> volver
-  GPIO24 -> acción / estado
+  GPIO24 -> estado / acción rápida
 
-Suposición de cableado:
-  Cada botón conecta el GPIO a GND al presionarse.
-  Por eso se usa pull_up=True.
-
-Instalación recomendada:
-  sudo apt install -y python3-pip python3-venv i2c-tools
-  pip install gpiozero luma.oled pillow
-
-Ejecutar:
-  python3 contra_espacios_menu_oled_botones.py
-
-Salir:
-  Ctrl+C
+Este programa aún no captura fotos, no lee sensores, no genera SVG y no ejecuta G-code.
+Solo simula los pasos para probar pantalla, botones y navegación.
 """
 
 from __future__ import annotations
@@ -37,13 +24,8 @@ from __future__ import annotations
 import signal
 import time
 from dataclasses import dataclass
-
 from gpiozero import Button
 
-
-# ---------------------------------------------------------------------
-# Configuración de pines
-# ---------------------------------------------------------------------
 
 PIN_UP = 17
 PIN_DOWN = 27
@@ -55,10 +37,6 @@ OLED_I2C_ADDRESS = 0x3C
 OLED_WIDTH = 128
 OLED_HEIGHT = 64
 
-
-# ---------------------------------------------------------------------
-# Estado del programa
-# ---------------------------------------------------------------------
 
 @dataclass
 class ProjectState:
@@ -79,16 +57,11 @@ MENU_ITEMS = [
     "Acerca de",
 ]
 
-
 state = ProjectState()
 menu_index = 0
 current_screen = "splash"
 running = True
 
-
-# ---------------------------------------------------------------------
-# OLED
-# ---------------------------------------------------------------------
 
 class Display:
     def __init__(self):
@@ -106,7 +79,7 @@ class Display:
             self.font = ImageFont.load_default()
             self.available = True
         except Exception as exc:
-            print("OLED no disponible, usando consola.")
+            print("OLED no disponible. Usando salida por consola.")
             print(f"Detalle: {exc}")
 
     def show(self, lines: list[str]) -> None:
@@ -132,10 +105,6 @@ class Display:
 
 display = Display()
 
-
-# ---------------------------------------------------------------------
-# Pantallas
-# ---------------------------------------------------------------------
 
 def show_splash() -> None:
     display.show([
@@ -165,8 +134,7 @@ def show_menu() -> None:
         lines.append(f"{prefix} {item}")
 
     lines.append("")
-    lines.append("SEL ok  BACK salir")
-
+    lines.append("SEL ok BACK volver")
     display.show(lines)
 
 
@@ -218,10 +186,6 @@ def render() -> None:
     else:
         show_menu()
 
-
-# ---------------------------------------------------------------------
-# Acciones simuladas
-# ---------------------------------------------------------------------
 
 def simulate_photo() -> None:
     state.photo_done = True
@@ -283,10 +247,6 @@ def select_current_item() -> None:
         show_about()
 
 
-# ---------------------------------------------------------------------
-# Botones
-# ---------------------------------------------------------------------
-
 def go_up() -> None:
     global menu_index, current_screen
 
@@ -328,26 +288,19 @@ def select() -> None:
 
 def back() -> None:
     global current_screen
-
     if current_screen == "splash":
         return
-
     current_screen = "menu"
     render()
 
 
 def quick_action() -> None:
-    """
-    Botón 5.
-    En esta versión de prueba muestra el estado.
-    Más adelante puede usarse como pausa, confirmar, repetir o emergencia lógica.
-    """
     global current_screen
     current_screen = "status"
     show_status()
 
 
-def setup_buttons() -> list[Button]:
+def setup_buttons() -> None:
     buttons = [
         Button(PIN_UP, pull_up=True, bounce_time=0.12),
         Button(PIN_DOWN, pull_up=True, bounce_time=0.12),
@@ -362,12 +315,9 @@ def setup_buttons() -> list[Button]:
     buttons[3].when_pressed = back
     buttons[4].when_pressed = quick_action
 
+    # Mantener referencias vivas.
     return buttons
 
-
-# ---------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------
 
 def stop_program(signum=None, frame=None) -> None:
     global running
@@ -392,8 +342,8 @@ def main() -> None:
 
     current_screen = "splash"
     render()
-
     time.sleep(2.5)
+
     current_screen = "menu"
     render()
 
