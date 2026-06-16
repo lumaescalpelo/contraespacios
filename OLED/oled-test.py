@@ -15,8 +15,7 @@ Forma normal de ejecución:
 Pantalla:
   OLED I2C en GPIO2 / GPIO3.
   Control directo SH1107 128x96.
-  Default: page offset 4, porque muchas OLED SH1107 128x96 usan memoria interna
-  de 128x128 y la zona visible empieza más abajo en la RAM del controlador.
+  Default: page_offset 0 para que el texto arranque arriba.
 
 Botones, de izquierda a derecha, empezando en pin físico 11:
   Botón 1: pin físico 11 / GPIO17 -> Arriba / anterior
@@ -61,9 +60,9 @@ OLED_I2C_ADDRESS = 0x3C
 OLED_WIDTH = 128
 OLED_HEIGHT = 96
 
-# Muchas OLED SH1107 128x96 usan GDDRAM de 128x128.
-# La zona visible suele empezar en la página 4.
-DEFAULT_PAGE_OFFSET = 4
+# Si el título sale a media pantalla, el offset era demasiado alto.
+# Default corregido: escribir desde página 0.
+DEFAULT_PAGE_OFFSET = 0
 DEFAULT_COLUMN_OFFSET = 0
 
 
@@ -107,7 +106,7 @@ def get_pin_factory():
         from gpiozero.pins.lgpio import LGPIOFactory
         return LGPIOFactory()
     except Exception as exc:
-        print("No se pudo cargar LGPIOFactory.")
+        print("ERROR: No se pudo cargar LGPIOFactory.")
         print(f"Detalle: {exc}")
         print()
         print("Instala soporte GPIO con:")
@@ -125,9 +124,11 @@ class SH1107Direct:
     """
     Driver mínimo directo para OLED SH1107 128x96 por I2C.
 
-    Este driver escribe la imagen en páginas de 8 pixeles. Por defecto empieza
-    en page_offset=4 para corregir módulos 128x96 que internamente tienen RAM
-    128x128 y muestran una ventana de 96 px.
+    Esta versión:
+    - dibuja desde la parte superior,
+    - limpia la RAM completa antes de cada pantalla,
+    - no cae a consola si falla I2C,
+    - intenta reconectar la OLED automáticamente.
     """
 
     def __init__(
@@ -143,6 +144,7 @@ class SH1107Direct:
     ):
         from smbus2 import SMBus
 
+        self.SMBus = SMBus
         self.bus_number = bus
         self.address = address
         self.width = width
@@ -152,16 +154,30 @@ class SH1107Direct:
         self.page_offset = page_offset
         self.rotate_180 = rotate_180
         self.contrast = max(0, min(255, int(contrast)))
-        self.bus = SMBus(bus)
+        self.bus = None
+        self.connect()
+
+    def connect(self) -> None:
+        if self.bus is not None:
+            try:
+                self.bus.close()
+            except Exception:
+                pass
+
+        self.bus = self.SMBus(self.bus_number)
         self.init_display()
+
+    def reconnect(self) -> None:
+        time.sleep(0.15)
+        self.connect()
 
     def command(self, *cmds: int) -> None:
         for cmd in cmds:
             self.bus.write_byte_data(self.address, 0x00, cmd & 0xFF)
 
     def data_block(self, data: list[int]) -> None:
-        # Bloques pequeños para evitar errores I2C en algunas pantallas.
-        block_size = 16
+        # Bloques pequeños para evitar errores I2C.
+        block_size = 8
         for i in range(0, len(data), block_size):
             self.bus.write_i2c_block_data(
                 self.address,
@@ -172,11 +188,11 @@ class SH1107Direct:
     def init_display(self) -> None:
         self.command(0xAE)        # Display OFF
         self.command(0xD5, 0x50)  # Clock divide
-        self.command(0xA8, 0x7F)  # Multiplex ratio para RAM 128 líneas
+        self.command(0xA8, 0x5F)  # Multiplex ratio: 96 - 1
         self.command(0xD3, 0x00)  # Display offset
-        self.command(0x40)        # Display start line
+        self.command(0x40)        # Display start line 0
 
-        # DC-DC / charge pump SH1107
+        # DC-DC / charge pump SH1107.
         self.command(0xAD, 0x8B)
 
         if self.rotate_180:
@@ -194,19 +210,13 @@ class SH1107Direct:
         self.command(0xA6)                # Normal display
         self.command(0xAF)                # Display ON
         self.clear_all_memory()
-        self.clear()
 
     def clear_all_memory(self) -> None:
-        # Limpia las 16 páginas internas para evitar basura visual anterior.
         blank = [0x00] * self.width
+
+        # SH1107 puede tener 16 páginas internas aunque el módulo visible sea 96 px.
         for page in range(16):
             self.set_raw_page(page)
-            self.data_block(blank)
-
-    def clear(self) -> None:
-        blank = [0x00] * self.width
-        for page in range(self.pages):
-            self.set_page(page)
             self.data_block(blank)
 
     def set_raw_page(self, raw_page: int) -> None:
@@ -219,11 +229,14 @@ class SH1107Direct:
         raw_page = self.page_offset + page
         self.set_raw_page(raw_page)
 
-    def display_image(self, image: Image.Image) -> None:
+    def display_image_once(self, image: Image.Image) -> None:
         image = image.convert("1")
 
         if self.rotate_180:
             image = image.transpose(Image.ROTATE_180)
+
+        # Limpieza total para no dejar texto viejo abajo.
+        self.clear_all_memory()
 
         pixels = image.load()
 
@@ -242,6 +255,35 @@ class SH1107Direct:
 
             self.data_block(data)
 
+    def display_image(self, image: Image.Image, retries: int = 3) -> bool:
+        last_error = None
+
+        for attempt in range(retries):
+            try:
+                self.display_image_once(image)
+                return True
+            except OSError as exc:
+                last_error = exc
+                print(f"Advertencia I2C OLED: {exc}. Reintentando conexión ({attempt + 1}/{retries})...")
+                try:
+                    self.reconnect()
+                except Exception as reconnect_exc:
+                    last_error = reconnect_exc
+                    print(f"No se pudo reconectar OLED: {reconnect_exc}")
+                    time.sleep(0.2)
+            except Exception as exc:
+                last_error = exc
+                print(f"Error OLED: {exc}. Reintentando ({attempt + 1}/{retries})...")
+                try:
+                    self.reconnect()
+                except Exception as reconnect_exc:
+                    last_error = reconnect_exc
+                    print(f"No se pudo reconectar OLED: {reconnect_exc}")
+                    time.sleep(0.2)
+
+        print(f"No se pudo actualizar OLED después de {retries} intentos. Último error: {last_error}")
+        return False
+
 
 # ---------------------------------------------------------------------
 # Pantalla
@@ -250,7 +292,6 @@ class SH1107Direct:
 class Display:
     def __init__(
         self,
-        mode: str = "sh1107-direct",
         address: int = OLED_I2C_ADDRESS,
         bus: int = OLED_I2C_BUS,
         width: int = OLED_WIDTH,
@@ -259,72 +300,43 @@ class Display:
         page_offset: int = DEFAULT_PAGE_OFFSET,
         rotate_180: bool = False,
         contrast: int = 0x7F,
+        top_margin: int = 0,
+        left_margin: int = 0,
     ):
-        self.mode = mode
         self.address = address
         self.bus = bus
         self.width = width
         self.height = height
-        self.available = False
-        self.device = None
+        self.top_margin = top_margin
+        self.left_margin = left_margin
+        self.device = SH1107Direct(
+            bus=bus,
+            address=address,
+            width=width,
+            height=height,
+            column_offset=column_offset,
+            page_offset=page_offset,
+            rotate_180=rotate_180,
+            contrast=contrast,
+        )
         self.font = ImageFont.load_default()
-
-        if mode == "console":
-            return
-
-        try:
-            self.device = SH1107Direct(
-                bus=bus,
-                address=address,
-                width=width,
-                height=height,
-                column_offset=column_offset,
-                page_offset=page_offset,
-                rotate_180=rotate_180,
-                contrast=contrast,
-            )
-            self.available = True
-
-        except Exception as exc:
-            self.available = False
-            print("OLED no disponible. Usando salida por consola.")
-            print(f"Modo solicitado: {mode}")
-            print(f"Dirección I2C: 0x{address:02X}")
-            print(f"Detalle: {exc}")
 
     def show(self, lines: list[str]) -> None:
         lines = [str(line) for line in lines]
 
-        if self.mode == "console" or not self.available:
-            print("\033c", end="")
-            print("\n".join(lines))
-            return
+        image = Image.new("1", (self.width, self.height))
+        draw = ImageDraw.Draw(image)
 
-        try:
-            image = Image.new("1", (self.width, self.height))
-            draw = ImageDraw.Draw(image)
+        # Layout superior, no centrado.
+        x = self.left_margin
+        y = self.top_margin
+        line_height = 9
 
-            # Layout superior, no centrado.
-            y = 0
-            line_height = 9
+        for line in lines[:10]:
+            draw.text((x, y), line[:21], font=self.font, fill=255)
+            y += line_height
 
-            for line in lines[:10]:
-                draw.text((0, y), line[:21], font=self.font, fill=255)
-                y += line_height
-
-            self.device.display_image(image)
-
-        except OSError as exc:
-            self.available = False
-            print("Error I2C al escribir OLED. Cambio temporal a consola.")
-            print(f"Detalle: {exc}")
-            print("\n".join(lines))
-
-        except Exception as exc:
-            self.available = False
-            print("Error al escribir OLED. Cambio temporal a consola.")
-            print(f"Detalle: {exc}")
-            print("\n".join(lines))
+        self.device.display_image(image)
 
 
 display: Optional[Display] = None
@@ -412,18 +424,18 @@ def show_action(title: str, message: str) -> None:
     ])
 
 
-def show_page_test() -> None:
+def show_screen_test() -> None:
     display.show([
-        "PRUEBA PANTALLA",
-        "Si esto aparece",
-        "arriba, ya esta",
-        "bien alineada.",
-        "",
-        "Si sigue al centro",
-        "probar:",
-        "--page-offset 0",
-        "--page-offset 2",
-        "--page-offset 6",
+        "LINEA 1 ARRIBA",
+        "LINEA 2",
+        "LINEA 3",
+        "LINEA 4",
+        "LINEA 5",
+        "LINEA 6",
+        "LINEA 7",
+        "LINEA 8",
+        "LINEA 9",
+        "LINEA 10",
     ])
 
 
@@ -437,7 +449,7 @@ def render() -> None:
     elif current_screen == "about":
         show_about()
     elif current_screen == "screen-test":
-        show_page_test()
+        show_screen_test()
     else:
         show_menu()
 
@@ -489,23 +501,18 @@ def select_current_item() -> None:
     if item == "Capturar foto":
         current_screen = "action"
         simulate_photo()
-
     elif item == "Capturar ambiente":
         current_screen = "action"
         simulate_environment()
-
     elif item == "Generar dibujo":
         current_screen = "action"
         simulate_generate()
-
     elif item == "Ejecutar dibujo":
         current_screen = "action"
         simulate_execute()
-
     elif item == "Estado":
         current_screen = "status"
         show_status()
-
     elif item == "Acerca de":
         current_screen = "about"
         show_about()
@@ -556,11 +563,11 @@ def setup_buttons() -> list[Button]:
     pin_factory = get_pin_factory()
 
     buttons = [
-        Button(PIN_BUTTON_1, pull_up=True, bounce_time=0.18, pin_factory=pin_factory),
-        Button(PIN_BUTTON_2, pull_up=True, bounce_time=0.18, pin_factory=pin_factory),
-        Button(PIN_BUTTON_3, pull_up=True, bounce_time=0.18, pin_factory=pin_factory),
-        Button(PIN_BUTTON_4, pull_up=True, bounce_time=0.18, pin_factory=pin_factory),
-        Button(PIN_BUTTON_5, pull_up=True, bounce_time=0.18, pin_factory=pin_factory),
+        Button(PIN_BUTTON_1, pull_up=True, bounce_time=0.22, pin_factory=pin_factory),
+        Button(PIN_BUTTON_2, pull_up=True, bounce_time=0.22, pin_factory=pin_factory),
+        Button(PIN_BUTTON_3, pull_up=True, bounce_time=0.22, pin_factory=pin_factory),
+        Button(PIN_BUTTON_4, pull_up=True, bounce_time=0.22, pin_factory=pin_factory),
+        Button(PIN_BUTTON_5, pull_up=True, bounce_time=0.22, pin_factory=pin_factory),
     ]
 
     # Los callbacks NO dibujan pantalla. Solo agregan eventos.
@@ -585,12 +592,6 @@ def stop_program(signum=None, frame=None) -> None:
 def parse_args():
     parser = argparse.ArgumentParser(description="Contra Espacios OLED + botones test")
     parser.add_argument(
-        "--display",
-        default="sh1107-direct",
-        choices=["sh1107-direct", "console"],
-        help="Modo de pantalla. Default: sh1107-direct",
-    )
-    parser.add_argument(
         "--address",
         default="0x3C",
         help="Dirección I2C. Default: 0x3C",
@@ -611,7 +612,19 @@ def parse_args():
         "--page-offset",
         default=DEFAULT_PAGE_OFFSET,
         type=int,
-        help="Offset de página. Default: 4",
+        help="Offset de página. Default: 0",
+    )
+    parser.add_argument(
+        "--top-margin",
+        default=0,
+        type=int,
+        help="Margen superior del texto en pixeles. Default: 0",
+    )
+    parser.add_argument(
+        "--left-margin",
+        default=0,
+        type=int,
+        help="Margen izquierdo del texto en pixeles. Default: 0",
     )
     parser.add_argument(
         "--rotate-180",
@@ -639,7 +652,6 @@ def main() -> None:
     address = int(args.address, 16) if isinstance(args.address, str) else args.address
 
     display = Display(
-        mode=args.display,
         address=address,
         bus=args.bus,
         width=OLED_WIDTH,
@@ -648,6 +660,8 @@ def main() -> None:
         page_offset=args.page_offset,
         rotate_180=args.rotate_180,
         contrast=args.contrast,
+        top_margin=args.top_margin,
+        left_margin=args.left_margin,
     )
 
     signal.signal(signal.SIGINT, stop_program)

@@ -16,30 +16,53 @@ Ruta esperada:
 
 ---
 
-## 1. Qué corrige esta versión
+## 1. Forma normal de ejecución
 
-Esta versión vuelve a la forma normal de trabajo:
+Entrar al directorio del módulo:
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/OLED
+```
+
+Activar entorno:
+
+```bash
 source .venv/bin/activate
+```
+
+Ejecutar:
+
+```bash
 python3 oled-test.py
 ```
 
-Nada de ejecutar desde Home con una ruta larguísima como si estuviéramos invocando un demonio administrativo. Eso solo hizo más molesto lo que debía ser simple.
-
-También se corrige el control de pantalla:
-
-- se usa un driver directo para **SH1107 128x96**,
-- el texto se dibuja desde la esquina superior izquierda,
-- se limpia toda la memoria interna antes de dibujar,
-- se usa `page_offset=4` por defecto,
-- los botones ya no escriben directo a la pantalla desde callbacks,
-- los botones mandan eventos a una cola y el loop principal actualiza la OLED.
+Esta vuelve a ser la forma normal. Nada de rutas kilométricas desde Home, porque eso fue una idea técnicamente válida y humanamente fastidiosa. El progreso a veces consiste en deshacer lo innecesario.
 
 ---
 
-## 2. Hardware conectado
+## 2. Qué corrige esta versión
+
+Esta versión cambia tres cosas importantes:
+
+1. **Quita el modo consola como fallback.**  
+   Si falla la OLED, el programa intenta reconectarse a la pantalla. Ya no cambia silenciosamente a consola.
+
+2. **Mueve el texto hacia arriba.**  
+   El texto se dibuja desde `y = 0`, con `page_offset = 0` por defecto.
+
+3. **Limpia la memoria completa de la pantalla antes de redibujar.**  
+   Esto reduce basura visual o texto viejo que queda debajo cuando se navega en el menú.
+
+También mantiene:
+
+- driver directo **SH1107 128x96**,
+- `LGPIOFactory`,
+- cola de eventos para botones,
+- escritura OLED solo desde el loop principal.
+
+---
+
+## 3. Hardware conectado
 
 ### OLED I2C
 
@@ -58,7 +81,7 @@ Dirección esperada:
 
 ---
 
-## 3. Botones
+## 4. Botones
 
 Los botones están conectados de izquierda a derecha a partir del pin físico 11 de la Raspberry Pi.
 
@@ -84,7 +107,7 @@ pull_up=True
 
 ---
 
-## 4. Qué hace cada botón
+## 5. Qué hace cada botón
 
 ### Botón 1 - GPIO17 - Arriba
 
@@ -92,15 +115,11 @@ Mueve el cursor del menú hacia arriba.
 
 Si estás en otra pantalla, regresa al menú.
 
----
-
 ### Botón 2 - GPIO27 - Abajo
 
 Mueve el cursor del menú hacia abajo.
 
 Si estás en otra pantalla, regresa al menú.
-
----
 
 ### Botón 3 - GPIO22 - Seleccionar
 
@@ -119,13 +138,9 @@ Acerca de
 
 Todas las acciones son simuladas.
 
----
-
 ### Botón 4 - GPIO23 - Volver
 
 Regresa al menú principal.
-
----
 
 ### Botón 5 - GPIO24 - Estado
 
@@ -141,40 +156,38 @@ Dibujo
 
 ---
 
-## 5. Instalar dependencias
+## 6. Dependencias necesarias
 
-Entrar a la carpeta:
+Estas dos líneas son importantes y deben quedar documentadas porque resuelven el problema de `gpiozero` en Raspberry Pi OS moderno:
+
+```bash
+sudo apt install -y python3-lgpio python3-gpiozero
+python3 -m venv --system-site-packages .venv
+```
+
+Instalación completa recomendada:
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/OLED
-```
-
-Instalar paquetes del sistema:
-
-```bash
 sudo apt update
 sudo apt install -y python3-lgpio python3-gpiozero python3-pil python3-smbus i2c-tools
-```
-
-Crear entorno virtual con paquetes del sistema:
-
-```bash
 rm -rf .venv
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
-```
-
-Instalar dependencias Python dentro del entorno:
-
-```bash
 pip install pillow smbus2
 ```
 
-Nota: `gpiozero`, `lgpio` y `PIL` pueden venir desde los paquetes del sistema gracias a `--system-site-packages`.
+Nota: `gpiozero`, `lgpio` y `PIL` pueden venir desde los paquetes del sistema gracias a:
+
+```bash
+python3 -m venv --system-site-packages .venv
+```
+
+Sí, esta línea importa. No es decoración ceremonial de terminal.
 
 ---
 
-## 6. Activar I2C
+## 7. Activar I2C
 
 ```bash
 sudo raspi-config
@@ -194,7 +207,7 @@ sudo reboot
 
 ---
 
-## 7. Confirmar que la pantalla aparece
+## 8. Confirmar que la pantalla aparece
 
 ```bash
 i2cdetect -y 1
@@ -217,9 +230,7 @@ Si no aparece:
 
 ---
 
-## 8. Ejecutar programa
-
-Forma normal:
+## 9. Ejecutar programa
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/OLED
@@ -229,52 +240,44 @@ python3 oled-test.py
 
 ---
 
-## 9. Ejecutar en consola sin OLED
-
-Esto sirve para confirmar botones aunque la pantalla esté fallando:
-
-```bash
-cd ~/Documents/GitHub/contraespacios/OLED
-source .venv/bin/activate
-python3 oled-test.py --display console
-```
-
----
-
-## 10. Probar alineación de pantalla
-
-Esta versión usa por defecto:
-
-```text
-page_offset = 4
-column_offset = 0
-```
-
-Para probar pantalla de alineación:
+## 10. Probar pantalla de alineación
 
 ```bash
 python3 oled-test.py --screen-test
 ```
 
-Si el texto aparece demasiado abajo o al centro, prueba:
+Debe verse:
+
+```text
+LINEA 1 ARRIBA
+LINEA 2
+LINEA 3
+...
+```
+
+La línea 1 debe salir arriba.
+
+---
+
+## 11. Ajustes si el texto sigue cortado
+
+Si la parte de arriba sigue cortada:
 
 ```bash
-python3 oled-test.py --screen-test --page-offset 0
+python3 oled-test.py --screen-test --page-offset 1
 ```
 
 ```bash
 python3 oled-test.py --screen-test --page-offset 2
 ```
 
-```bash
-python3 oled-test.py --screen-test --page-offset 4
-```
+Si vuelve a verse al centro, regresar a:
 
 ```bash
-python3 oled-test.py --screen-test --page-offset 6
+python3 oled-test.py --screen-test --page-offset 0
 ```
 
-Si la imagen está corrida a la izquierda o derecha:
+Si está corrida a los lados:
 
 ```bash
 python3 oled-test.py --screen-test --column-offset 2
@@ -282,6 +285,12 @@ python3 oled-test.py --screen-test --column-offset 2
 
 ```bash
 python3 oled-test.py --screen-test --column-offset 4
+```
+
+Si necesita un margen pequeño arriba:
+
+```bash
+python3 oled-test.py --screen-test --top-margin 2
 ```
 
 Si está invertida:
@@ -292,7 +301,7 @@ python3 oled-test.py --rotate-180
 
 ---
 
-## 11. Qué debe mostrar
+## 12. Qué debe mostrar
 
 Al iniciar:
 
@@ -322,7 +331,7 @@ Menu principal
 
 ---
 
-## 12. Menú actual
+## 13. Menú actual
 
 ### Capturar foto
 
@@ -336,8 +345,6 @@ Foto: OK
 
 Más adelante llamará al programa real de ESP32CAM.
 
----
-
 ### Capturar ambiente
 
 Simula lectura ambiental.
@@ -349,8 +356,6 @@ Ambiente: OK
 ```
 
 Más adelante llamará al programa real del ENS160 + AHT2X conectado directo a Raspberry Pi.
-
----
 
 ### Generar dibujo
 
@@ -367,8 +372,6 @@ Si falta algo, indica:
 Falta foto/amb
 ```
 
----
-
 ### Ejecutar dibujo
 
 Simula ejecución del dibujo.
@@ -381,13 +384,9 @@ Si falta, indica:
 Falta Gcode
 ```
 
----
-
 ### Estado
 
 Muestra el estado de todos los pasos.
-
----
 
 ### Acerca de
 
@@ -395,7 +394,7 @@ Muestra una descripción breve del proyecto.
 
 ---
 
-## 13. Salir del programa
+## 14. Salir del programa
 
 Presionar:
 
@@ -405,13 +404,14 @@ Ctrl+C
 
 ---
 
-## 14. Estado de esta prueba
+## 15. Estado de esta prueba
 
 - [x] OLED en GPIO2/GPIO3.
 - [x] Botones en GPIO17, GPIO27, GPIO22, GPIO23, GPIO24.
 - [x] Mapeo de botones de izquierda a derecha.
 - [x] Driver directo SH1107 128x96.
-- [x] `page_offset=4` por defecto.
+- [x] `page_offset=0` por defecto.
+- [x] Reconexión OLED si falla I2C.
 - [x] Uso de LGPIOFactory.
 - [x] Cola de eventos para no escribir OLED desde callbacks.
 - [x] Menú de prueba.
