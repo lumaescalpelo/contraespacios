@@ -6,29 +6,24 @@ Contra Espacios - oled-test.py
 
 Prueba de pantalla OLED I2C + 5 botones para Raspberry Pi.
 
-Forma normal de ejecución:
+Forma normal:
 
   cd ~/Documents/GitHub/contraespacios/OLED
   source .venv/bin/activate
   python3 oled-test.py
 
-Pantalla:
-  OLED I2C en GPIO2 / GPIO3.
-  Esta versión permite probar varios drivers/modelos de OLED.
+Botones de izquierda a derecha, empezando en pin físico 11:
 
-Botones, de izquierda a derecha, empezando en pin físico 11:
   Botón 1: pin físico 11 / GPIO17 -> Arriba / anterior
   Botón 2: pin físico 13 / GPIO27 -> Abajo / siguiente
   Botón 3: pin físico 15 / GPIO22 -> Seleccionar
   Botón 4: pin físico 16 / GPIO23 -> Volver
   Botón 5: pin físico 18 / GPIO24 -> Estado
 
-Este es un programa de prueba:
-  - No captura fotos reales.
-  - No lee sensores reales.
-  - No genera SVG real.
-  - No genera G-code real.
-  - No mueve la CNC.
+Notas:
+  - ssd1306 y sh1106 en luma.oled NO soportan 128x96.
+  - Para pantalla 128x96, probar primero sh1107.
+  - Si se quiere probar ssd1306/sh1106, hacerlo como diagnóstico con --height 64.
 """
 
 from __future__ import annotations
@@ -36,6 +31,7 @@ from __future__ import annotations
 import argparse
 import queue
 import signal
+import sys
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -56,8 +52,8 @@ PIN_BUTTON_5 = 24  # Pin físico 18
 
 OLED_I2C_BUS = 1
 OLED_I2C_ADDRESS = 0x3C
-OLED_WIDTH = 128
-OLED_HEIGHT = 96
+DEFAULT_WIDTH = 128
+DEFAULT_HEIGHT = 96
 
 
 # ---------------------------------------------------------------------
@@ -95,7 +91,6 @@ events: "queue.Queue[str]" = queue.Queue()
 # ---------------------------------------------------------------------
 
 def get_pin_factory():
-    """Usa LGPIOFactory de forma explícita en Raspberry Pi OS moderno."""
     try:
         from gpiozero.pins.lgpio import LGPIOFactory
         return LGPIOFactory()
@@ -111,28 +106,28 @@ def get_pin_factory():
 
 
 # ---------------------------------------------------------------------
-# Drivers de pantalla
+# Drivers OLED
 # ---------------------------------------------------------------------
 
 class LumaOLED:
     """
-    Control por luma.oled.
+    Driver usando luma.oled.
 
-    Esta ruta permite probar modelos como ssd1306, sh1106 y sh1107 sin reescribir
-    todo el programa cada vez que una OLED decide fingir que es otra OLED.
+    Importante:
+    - sh1107 soporta 128x96.
+    - ssd1306 y sh1106 NO soportan 128x96 en luma.oled.
     """
 
-    def __init__(
-        self,
-        driver: str,
-        bus: int,
-        address: int,
-        width: int,
-        height: int,
-        rotate: int,
-    ):
+    def __init__(self, driver: str, bus: int, address: int, width: int, height: int, rotate: int):
         from luma.core.interface.serial import i2c
         from luma.oled.device import ssd1306, sh1106, sh1107
+        from luma.core.error import DeviceDisplayModeError
+
+        if driver in ("ssd1306", "sh1106") and (width, height) == (128, 96):
+            raise DeviceDisplayModeError(
+                f"{driver} en luma.oled no soporta 128x96. "
+                f"Usa --driver sh1107 para 128x96 o prueba {driver} con --height 64."
+            )
 
         serial = i2c(port=bus, address=address)
 
@@ -157,16 +152,9 @@ class LumaOLED:
 
 class DirectPageOLED:
     """
-    Driver directo por páginas para controladores compatibles con comandos tipo SSD1306/SH1106.
+    Driver directo por páginas para controladores tipo SSD1306/SH1106/SH1107.
 
-    Útil para probar:
-    - ssd1306-direct
-    - sh1106-direct
-    - sh1107-direct
-
-    Si solo aparecen líneas 8, 9 y 10 abajo, el mapeo de páginas no coincide con
-    la pantalla real. En ese caso conviene probar otro driver, no seguir moviendo
-    offsets como si eso fuera terapia.
+    Sirve para diagnóstico cuando luma no mapea correctamente la pantalla.
     """
 
     def __init__(
@@ -181,6 +169,10 @@ class DirectPageOLED:
         rotate_180: bool,
         contrast: int,
         multiplex: int,
+        start_line: int,
+        display_offset: int,
+        segment_remap: int,
+        com_scan: int,
     ):
         from smbus2 import SMBus
 
@@ -196,6 +188,10 @@ class DirectPageOLED:
         self.rotate_180 = rotate_180
         self.contrast = max(0, min(255, int(contrast)))
         self.multiplex = multiplex
+        self.start_line = start_line & 0x3F
+        self.display_offset = display_offset & 0x7F
+        self.segment_remap = segment_remap
+        self.com_scan = com_scan
         self.bus = None
         self.connect()
 
@@ -226,30 +222,34 @@ class DirectPageOLED:
             )
 
     def init_display(self) -> None:
-        self.command(0xAE)        # Display OFF
-        self.command(0xD5, 0x80)  # Clock divide
+        self.command(0xAE)                  # Display OFF
+        self.command(0xD5, 0x80)            # Clock divide
         self.command(0xA8, self.multiplex)  # Multiplex
-        self.command(0xD3, 0x00)  # Display offset
-        self.command(0x40)        # Start line
+        self.command(0xD3, self.display_offset)
+        self.command(0x40 | self.start_line)
 
-        if self.controller in ("ssd1306", "sh1107"):
-            # Charge pump / DC-DC.
-            if self.controller == "ssd1306":
-                self.command(0x8D, 0x14)
-            else:
-                self.command(0xAD, 0x8B)
+        if self.controller == "ssd1306":
+            self.command(0x8D, 0x14)        # Charge pump
+        elif self.controller == "sh1107":
+            self.command(0xAD, 0x8B)        # DC-DC SH1107
 
         if self.rotate_180:
             self.command(0xA0)
             self.command(0xC0)
         else:
-            self.command(0xA1)
-            self.command(0xC8)
+            self.command(self.segment_remap)
+            self.command(self.com_scan)
 
         self.command(0xDA, 0x12)
         self.command(0x81, self.contrast)
-        self.command(0xD9, 0xF1 if self.controller == "ssd1306" else 0x1F)
-        self.command(0xDB, 0x40 if self.controller == "ssd1306" else 0x35)
+
+        if self.controller == "ssd1306":
+            self.command(0xD9, 0xF1)
+            self.command(0xDB, 0x40)
+        else:
+            self.command(0xD9, 0x1F)
+            self.command(0xDB, 0x35)
+
         self.command(0xA4)
         self.command(0xA6)
         self.command(0xAF)
@@ -272,18 +272,18 @@ class DirectPageOLED:
 
     def display_image_once(self, image: Image.Image) -> None:
         image = image.convert("1")
+
         if self.rotate_180:
             image = image.transpose(Image.ROTATE_180)
 
         self.clear_all_memory()
-
         pixels = image.load()
 
         for page in range(self.pages):
             self.set_raw_page(self.page_offset + page)
             data = []
-
             y0 = page * 8
+
             for x in range(self.width):
                 byte = 0
                 for bit in range(8):
@@ -335,6 +335,10 @@ class Display:
         top_margin: int,
         left_margin: int,
         multiplex: int,
+        start_line: int,
+        display_offset: int,
+        segment_remap: int,
+        com_scan: int,
     ):
         self.driver = driver
         self.address = address
@@ -367,12 +371,15 @@ class Display:
                 rotate_180=rotate_180,
                 contrast=contrast,
                 multiplex=multiplex,
+                start_line=start_line,
+                display_offset=display_offset,
+                segment_remap=segment_remap,
+                com_scan=com_scan,
             )
         else:
             raise ValueError(f"Driver no soportado: {driver}")
 
     def make_image(self, lines: list[str]) -> Image.Image:
-        lines = [str(line) for line in lines]
         image = Image.new("1", (self.width, self.height))
         draw = ImageDraw.Draw(image)
 
@@ -380,15 +387,14 @@ class Display:
         y = self.top_margin
         line_height = 9
 
-        for line in lines[:10]:
+        for line in [str(line) for line in lines][:10]:
             draw.text((x, y), line[:21], font=self.font, fill=255)
             y += line_height
 
         return image
 
     def show(self, lines: list[str]) -> None:
-        image = self.make_image(lines)
-        self.device.display_image(image)
+        self.device.display_image(self.make_image(lines))
 
     def cleanup(self) -> None:
         self.device.cleanup()
@@ -648,21 +654,21 @@ def parse_args():
 
     parser.add_argument(
         "--driver",
-        default="ssd1306",
+        default="sh1107",
         choices=[
+            "sh1107",
             "ssd1306",
             "sh1106",
-            "sh1107",
             "ssd1306-direct",
             "sh1106-direct",
             "sh1107-direct",
         ],
-        help="Driver/modelo de OLED. Default: ssd1306",
+        help="Driver/modelo de OLED. Default: sh1107",
     )
     parser.add_argument("--address", default="0x3C", help="Dirección I2C. Default: 0x3C")
     parser.add_argument("--bus", default=1, type=int, help="Bus I2C. Default: 1")
-    parser.add_argument("--width", default=128, type=int, help="Ancho OLED. Default: 128")
-    parser.add_argument("--height", default=96, type=int, help="Alto OLED. Default: 96")
+    parser.add_argument("--width", default=DEFAULT_WIDTH, type=int, help="Ancho OLED. Default: 128")
+    parser.add_argument("--height", default=DEFAULT_HEIGHT, type=int, help="Alto OLED. Default: 96")
     parser.add_argument("--column-offset", default=0, type=int, help="Offset de columna para drivers directos.")
     parser.add_argument("--page-offset", default=0, type=int, help="Offset de página para drivers directos.")
     parser.add_argument("--top-margin", default=0, type=int, help="Margen superior en pixeles.")
@@ -671,6 +677,10 @@ def parse_args():
     parser.add_argument("--rotate-180", action="store_true", help="Rotación 180 para drivers directos.")
     parser.add_argument("--contrast", default=0x7F, type=lambda x: int(x, 0), help="Contraste para drivers directos.")
     parser.add_argument("--multiplex", default=0x5F, type=lambda x: int(x, 0), help="Multiplex para drivers directos. 0x5F=96px, 0x7F=128px.")
+    parser.add_argument("--start-line", default=0, type=int, help="Start line para drivers directos.")
+    parser.add_argument("--display-offset", default=0, type=int, help="Display offset para drivers directos.")
+    parser.add_argument("--segment-remap", default=0xA1, type=lambda x: int(x, 0), help="Segment remap directo.")
+    parser.add_argument("--com-scan", default=0xC8, type=lambda x: int(x, 0), help="COM scan directo.")
     parser.add_argument("--screen-test", action="store_true", help="Muestra pantalla de prueba.")
 
     return parser.parse_args()
@@ -682,21 +692,40 @@ def main() -> None:
     args = parse_args()
     address = int(args.address, 16) if isinstance(args.address, str) else args.address
 
-    display = Display(
-        driver=args.driver,
-        address=address,
-        bus=args.bus,
-        width=args.width,
-        height=args.height,
-        column_offset=args.column_offset,
-        page_offset=args.page_offset,
-        rotate=args.rotate,
-        rotate_180=args.rotate_180,
-        contrast=args.contrast,
-        top_margin=args.top_margin,
-        left_margin=args.left_margin,
-        multiplex=args.multiplex,
-    )
+    try:
+        display = Display(
+            driver=args.driver,
+            address=address,
+            bus=args.bus,
+            width=args.width,
+            height=args.height,
+            column_offset=args.column_offset,
+            page_offset=args.page_offset,
+            rotate=args.rotate,
+            rotate_180=args.rotate_180,
+            contrast=args.contrast,
+            top_margin=args.top_margin,
+            left_margin=args.left_margin,
+            multiplex=args.multiplex,
+            start_line=args.start_line,
+            display_offset=args.display_offset,
+            segment_remap=args.segment_remap,
+            com_scan=args.com_scan,
+        )
+    except Exception as exc:
+        print()
+        print("No se pudo inicializar la OLED con esos parámetros.")
+        print(f"Error: {exc}")
+        print()
+        print("Pruebas recomendadas:")
+        print("  python3 oled-test.py --screen-test --driver sh1107")
+        print("  python3 oled-test.py --screen-test --driver ssd1306 --height 64")
+        print("  python3 oled-test.py --screen-test --driver sh1106 --height 64")
+        print("  python3 oled-test.py --screen-test --driver ssd1306-direct")
+        print("  python3 oled-test.py --screen-test --driver sh1106-direct")
+        print("  python3 oled-test.py --screen-test --driver sh1107-direct")
+        print()
+        raise SystemExit(1)
 
     signal.signal(signal.SIGINT, stop_program)
     signal.signal(signal.SIGTERM, stop_program)

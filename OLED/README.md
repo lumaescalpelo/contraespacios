@@ -38,37 +38,31 @@ python3 oled-test.py
 
 ---
 
-## 2. Por qué esta versión prueba otros modelos
+## 2. Error corregido
 
-La prueba anterior ya demostró que los botones funcionan, pero la OLED no está mapeando bien la memoria de pantalla.
-
-Síntomas observados:
-
-- En `screen-test` solo aparecen las líneas 8, 9 y 10 abajo.
-- El primer pixel de la palabra `LINEA` aparece cortado.
-- Hay líneas basura al final de la pantalla, hacia la derecha.
-- Los offsets no corrigen lo suficiente.
-
-Eso indica que no conviene seguir empujando offsets a ciegas. Es mejor probar otro modelo/controlador de pantalla.
-
-Esta versión permite probar:
+Si al probar `ssd1306` o `sh1106` aparece:
 
 ```text
-ssd1306
-sh1106
-sh1107
-ssd1306-direct
-sh1106-direct
-sh1107-direct
+DeviceDisplayModeError: Unsupported display mode: 128 x 96
 ```
 
-El nuevo default es:
+no significa que el programa esté roto. Significa que `luma.oled` no acepta `128x96` para esos drivers.
+
+En `luma.oled`:
+
+- `ssd1306` no soporta `128x96`.
+- `sh1106` no soporta `128x96`.
+- `sh1107` sí es el candidato para `128x96`.
+
+Por eso el default vuelve a ser:
 
 ```text
-ssd1306
+--driver sh1107
 ```
 
-porque el síntoma actual sugiere que el mapeo SH1107 directo no corresponde a tu módulo.
+Para probar `ssd1306` o `sh1106`, hay que hacerlo como diagnóstico usando `--height 64`.
+
+Sí, el ecosistema OLED decidió que el mismo conector I2C podía esconder varios controladores distintos. Una fiesta, si tu concepto de fiesta incluye tracebacks.
 
 ---
 
@@ -117,48 +111,7 @@ pull_up=True
 
 ---
 
-## 5. Qué hace cada botón
-
-### Botón 1 - GPIO17 - Arriba
-
-Mueve el cursor del menú hacia arriba.
-
-Si estás en otra pantalla, regresa al menú.
-
-### Botón 2 - GPIO27 - Abajo
-
-Mueve el cursor del menú hacia abajo.
-
-Si estás en otra pantalla, regresa al menú.
-
-### Botón 3 - GPIO22 - Seleccionar
-
-Ejecuta la opción marcada en el menú.
-
-Opciones actuales:
-
-```text
-Capturar foto
-Capturar ambiente
-Generar dibujo
-Ejecutar dibujo
-Estado
-Acerca de
-```
-
-Todas las acciones son simuladas.
-
-### Botón 4 - GPIO23 - Volver
-
-Regresa al menú principal.
-
-### Botón 5 - GPIO24 - Estado
-
-Muestra el estado interno del sistema.
-
----
-
-## 6. Dependencias necesarias
+## 5. Dependencias necesarias
 
 Estas líneas son importantes para `gpiozero` en Raspberry Pi OS moderno:
 
@@ -181,7 +134,7 @@ pip install luma.oled pillow smbus2
 
 ---
 
-## 7. Activar I2C
+## 6. Activar I2C
 
 ```bash
 sudo raspi-config
@@ -201,7 +154,7 @@ sudo reboot
 
 ---
 
-## 8. Confirmar que la pantalla aparece
+## 7. Confirmar que la pantalla aparece
 
 ```bash
 i2cdetect -y 1
@@ -213,50 +166,52 @@ Debe aparecer algo como:
 3c
 ```
 
-Si no aparece:
-
-- revisar VCC,
-- revisar GND,
-- revisar SDA en GPIO2,
-- revisar SCL en GPIO3,
-- confirmar que I2C está activado,
-- probar cables más cortos.
-
 ---
 
-## 9. Prueba rápida con driver default
+## 8. Prueba principal recomendada
 
-```bash
-cd ~/Documents/GitHub/contraespacios/OLED
-source .venv/bin/activate
-python3 oled-test.py --screen-test
-```
-
-El default ahora usa:
-
-```text
---driver ssd1306
-```
-
----
-
-## 10. Probar modelos de pantalla
-
-Ejecutar uno por uno:
-
-```bash
-python3 oled-test.py --screen-test --driver ssd1306
-```
-
-```bash
-python3 oled-test.py --screen-test --driver sh1106
-```
+Primero probar:
 
 ```bash
 python3 oled-test.py --screen-test --driver sh1107
 ```
 
-Si esos no quedan bien, probar los drivers directos:
+Si eso muestra correctamente:
+
+```text
+LINEA 1 ARRIBA
+LINEA 2
+LINEA 3
+...
+```
+
+entonces ejecutar menú normal:
+
+```bash
+python3 oled-test.py --driver sh1107
+```
+
+---
+
+## 9. Pruebas diagnósticas con 128x64
+
+Estas pruebas no usan toda la pantalla. Sirven para saber si el módulo se comporta como `ssd1306` o `sh1106`.
+
+```bash
+python3 oled-test.py --screen-test --driver ssd1306 --height 64
+```
+
+```bash
+python3 oled-test.py --screen-test --driver sh1106 --height 64
+```
+
+Si una de estas se ve limpia, pero solo usa una parte de la pantalla, ya sabemos más sobre el controlador real.
+
+---
+
+## 10. Pruebas con drivers directos
+
+Si `sh1107` no funciona bien, probar:
 
 ```bash
 python3 oled-test.py --screen-test --driver ssd1306-direct
@@ -270,25 +225,36 @@ python3 oled-test.py --screen-test --driver sh1106-direct
 python3 oled-test.py --screen-test --driver sh1107-direct
 ```
 
-La pantalla correcta es la que muestre:
-
-```text
-LINEA 1 ARRIBA
-LINEA 2
-LINEA 3
-...
-```
-
-desde la parte superior, sin basura al lado derecho.
-
 ---
 
-## 11. Ajustes útiles
+## 11. Pruebas de orientación y memoria
 
-### Rotación con luma
+Para drivers directos:
 
 ```bash
-python3 oled-test.py --screen-test --driver ssd1306 --rotate 1
+python3 oled-test.py --screen-test --driver sh1107-direct --page-offset 0
+```
+
+```bash
+python3 oled-test.py --screen-test --driver sh1107-direct --page-offset 4
+```
+
+```bash
+python3 oled-test.py --screen-test --driver sh1107-direct --multiplex 0x7F
+```
+
+```bash
+python3 oled-test.py --screen-test --driver sh1107-direct --start-line 32
+```
+
+```bash
+python3 oled-test.py --screen-test --driver sh1107-direct --display-offset 32
+```
+
+Para rotación con `luma`:
+
+```bash
+python3 oled-test.py --screen-test --driver sh1107 --rotate 1
 ```
 
 Opciones:
@@ -300,49 +266,26 @@ Opciones:
 3
 ```
 
-### Ancho y alto
-
-Si 128x96 no funciona bien, probar 128x64 solo como diagnóstico:
-
-```bash
-python3 oled-test.py --screen-test --driver ssd1306 --height 64
-```
-
-### Offset de columna en drivers directos
-
-```bash
-python3 oled-test.py --screen-test --driver sh1106-direct --column-offset 2
-```
-
-```bash
-python3 oled-test.py --screen-test --driver sh1106-direct --column-offset 4
-```
-
-### Multiplex en drivers directos
-
-```bash
-python3 oled-test.py --screen-test --driver ssd1306-direct --multiplex 0x5F
-```
-
-```bash
-python3 oled-test.py --screen-test --driver ssd1306-direct --multiplex 0x7F
-```
-
 ---
 
-## 12. Ejecutar menú normal cuando encuentres el driver correcto
+## 12. Cómo identificar el driver correcto
 
-Ejemplo:
+La pantalla correcta debe mostrar:
 
-```bash
-python3 oled-test.py --driver ssd1306
+```text
+LINEA 1 ARRIBA
+LINEA 2
+LINEA 3
+LINEA 4
+LINEA 5
+...
 ```
 
-o:
+desde la parte superior, sin basura a la derecha.
 
-```bash
-python3 oled-test.py --driver sh1106
-```
+Si solo se ven líneas 8, 9 y 10 abajo, ese driver no sirve para este módulo.
+
+Si aparece error `Unsupported display mode: 128 x 96`, ese driver no soporta esa resolución con `luma.oled`.
 
 ---
 
@@ -390,6 +333,7 @@ Ctrl+C
 - [x] Botones en GPIO17, GPIO27, GPIO22, GPIO23, GPIO24.
 - [x] Mapeo de botones de izquierda a derecha.
 - [x] Prueba de varios modelos de pantalla.
+- [x] Corrección del error `Unsupported display mode: 128 x 96`.
 - [x] Uso de LGPIOFactory.
 - [x] Cola de eventos para no escribir OLED desde callbacks.
 - [x] Menú de prueba.
