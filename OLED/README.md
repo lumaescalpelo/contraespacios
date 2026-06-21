@@ -22,6 +22,79 @@ Así se conservan aunque se actualice o reemplace el repositorio. Una rara victo
 
 ---
 
+## 0. Resumen rápido de instalación limpia
+
+Este bloque sirve para instalar el módulo OLED en una Raspberry Pi nueva o para reparar una instalación anterior. Borra el entorno virtual viejo y reinstala dependencias, porque luma del futuro merece menos trampas escondidas. Poquitas, al menos.
+
+```bash
+cd ~/Documents/GitHub/contraespacios/OLED
+
+# Respaldar el script actual antes de reemplazarlo
+cp oled-udp.py oled-udp_backup_$(date +%Y%m%d_%H%M%S).py
+
+# Borrar entorno virtual anterior
+rm -rf .venv
+
+# Instalar dependencias del sistema
+sudo apt update
+sudo apt install -y \
+  python3 \
+  python3-venv \
+  python3-pip \
+  python3-lgpio \
+  python3-gpiozero \
+  python3-pil \
+  python3-smbus \
+  i2c-tools \
+  git
+
+# Crear entorno virtual usando paquetes del sistema
+python3 -m venv --system-site-packages .venv
+
+# Activar entorno
+source .venv/bin/activate
+
+# Instalar dependencias Python faltantes
+pip install --upgrade pip
+pip install pillow smbus2
+
+# Crear carpeta persistente de datos fuera del repositorio
+mkdir -p ~/data
+
+# Probar pantalla I2C
+i2cdetect -y 1
+
+# Ejecutar interfaz OLED
+python3 oled-udp.py
+```
+
+Si `i2cdetect -y 1` no muestra `0x3C`, revisa I2C, cableado, alimentación y que la pantalla no haya decidido convertirse en pisapapeles carísimo.
+
+### Reinstalación después de actualizar el repositorio
+
+Si actualizaste el repositorio y algo dejó de funcionar, usa:
+
+```bash
+cd ~/Documents/GitHub/contraespacios/OLED
+rm -rf .venv
+sudo apt update
+sudo apt install -y python3-venv python3-lgpio python3-gpiozero python3-pil python3-smbus i2c-tools
+python3 -m venv --system-site-packages .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install pillow smbus2
+python3 oled-udp.py
+```
+
+Los datos de sesiones no se borran con esto porque están en:
+
+```text
+~/data
+```
+
+No en el repositorio. Por una vez, la estructura de carpetas está intentando salvarnos de nosotras mismas.
+
+
 ## 1. Hardware usado
 
 ### Raspberry Pi
@@ -64,6 +137,8 @@ GPIO ---- botón ---- GND
 ---
 
 ## 2. Instalar dependencias en una Raspberry Pi nueva
+
+La instalación limpia recomendada es la del **Resumen rápido** de arriba. Esta sección deja el detalle por partes para revisar qué hace cada comando.
 
 Actualizar sistema:
 
@@ -117,6 +192,7 @@ Deberías ver algo como:
 3c
 ```
 
+
 ---
 
 ## 3. Crear entorno Python
@@ -125,6 +201,12 @@ Entrar a la carpeta del módulo OLED dentro del repositorio:
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/OLED
+```
+
+Borrar cualquier entorno virtual anterior:
+
+```bash
+rm -rf .venv
 ```
 
 Crear entorno virtual con acceso a paquetes del sistema:
@@ -139,13 +221,21 @@ Activar entorno:
 source .venv/bin/activate
 ```
 
-Instalar dependencias Python adicionales:
+Actualizar `pip` e instalar dependencias Python adicionales:
 
 ```bash
+pip install --upgrade pip
 pip install pillow smbus2
 ```
 
-`gpiozero` y `lgpio` se instalan desde `apt`, no desde `pip`, porque en Raspberry Pi eso evita una bonita colección de errores absurdos.
+`gpiozero`, `lgpio`, `PIL` y `smbus` se instalan desde `apt`, no desde `pip`, porque en Raspberry Pi eso evita una bonita colección de errores absurdos.
+
+Crear la carpeta persistente de datos:
+
+```bash
+mkdir -p ~/data
+```
+
 
 ---
 
