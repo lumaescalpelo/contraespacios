@@ -5,7 +5,7 @@ msg.session_id = sessionId;
 msg.payload = [
   "--session", sessionId,
   "--data-root", "/home/pi/data",
-  "--film-width-mm", "16",
-  "--film-height-mm", "43"
+  "--film-width-mm", "43",
+  "--film-height-mm", "16"
 ].join(" ");
 return msg;

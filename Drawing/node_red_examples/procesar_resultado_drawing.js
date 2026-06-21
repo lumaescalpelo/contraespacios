@@ -18,7 +18,6 @@ try {
 
 const sessionId = data.session_id || msg.session_id || flow.get("active_session") || "S01";
 const dataOut = { ...msg, payload: data };
-
 if (data.ok === true) {
   flow.set("drawing_done", true);
   flow.set("session_has_drawing", true);
@@ -39,7 +38,6 @@ if (data.ok === true) {
     port: 5006
   }];
 }
-
 return [dataOut, {
   payload: JSON.stringify({
     type: "status",

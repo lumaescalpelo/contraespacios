@@ -1,20 +1,22 @@
-# Contra Espacios · Drawing v2
+# Contra Espacios · Drawing v3 Landscape
 
-Versión ajustada para que el dibujo se parezca **mucho más a las fotos**.
+Esta versión v3 está pensada específicamente para lo que describiste:
 
-La v1 privilegiaba una respuesta demasiado abstracta. Esta v2 cambia el enfoque:
+- **formato horizontal** desde el origen;
+- **43 x 16 mm** como valor predeterminado;
+- sin relleno total de líneas de borde a borde;
+- salida más **paisaje**, más **topográfica** y más **elocuente** en formato pequeño;
+- menor detalle microscópico y mayor énfasis en:
+  - masas principales,
+  - contornos grandes,
+  - bandas parciales,
+  - líneas internas sugerentes.
 
-- usa **composición por mediana** de las fotos de la sesión;
-- aumenta el peso de la **estructura de imagen**;
-- genera una base de **escaneo tonal serpentino**;
-- agrega **contornos derivados de la escena**;
-- deja la influencia ambiental como **modulación ligera**, no como protagonista.
-
-Con eso el resultado debería recordar mucho mejor la escena capturada, aunque siga siendo un dibujo lineal continuo pensado para un mecanismo **sin eje Z**.
+La idea es que la imagen siga siendo una reminiscencia de la escena, pero con un lenguaje más adecuado para un mecanismo sin eje Z.
 
 ---
 
-## 1. Instalación en Raspberry Pi 3B+
+## 1. Instalación
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/Drawing
@@ -30,22 +32,7 @@ pip install -r requirements.txt
 
 ---
 
-## 2. Qué cambió en esta versión
-
-### v1
-- líneas atmosféricas muy marcadas;
-- contornos con poca presencia relativa;
-- resultado más abstracto.
-
-### v2
-- el dibujo nace de un **raster tonal** basado en la luminosidad real de la imagen;
-- los bordes detectados agregan relieve y estructura;
-- los contornos se agregan encima del raster;
-- el ambiente modifica densidad, amplitud y grosor, pero **no destruye la semejanza**.
-
----
-
-## 3. Estructura esperada de sesión
+## 2. Estructura esperada
 
 ```text
 /home/pi/data/sessions/S01/
@@ -55,26 +42,11 @@ pip install -r requirements.txt
 └── output/
 ```
 
-Las fotos deben ser JPEG válidos.
-
-Las lecturas ambientales deben contener:
-
-```json
-{
-  "ok": true,
-  "aht_ok": true,
-  "ens_ok": true,
-  "temperature": 26.5,
-  "humidity": 47.0,
-  "aqi": 1,
-  "tvoc": 21,
-  "eco2": 400
-}
-```
-
 ---
 
-## 4. Ejecutar manualmente
+## 3. Ejecución básica
+
+### Formato horizontal 43 x 16 mm
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/Drawing
@@ -83,51 +55,77 @@ source .venv/bin/activate
 python3 generate_drawing.py \
   --session S01 \
   --data-root /home/pi/data \
-  --film-width-mm 16 \
-  --film-height-mm 43
+  --film-width-mm 43 \
+  --film-height-mm 16
 ```
 
-Para 32 x 43 mm:
+### Formato horizontal 43 x 32 mm
 
 ```bash
 python3 generate_drawing.py \
   --session S01 \
   --data-root /home/pi/data \
-  --film-width-mm 32 \
-  --film-height-mm 43
+  --film-width-mm 43 \
+  --film-height-mm 32
 ```
 
 ---
 
-## 5. Parámetros importantes
+## 4. Qué cambia visualmente respecto a v2
 
-Si quieres más detalle visual:
+### v2
+- raster más dominante;
+- más líneas de barrido;
+- sensación más mecánica.
+
+### v3
+- menos líneas horizontales completas;
+- bandas parciales en zonas con masa visual;
+- contornos simplificados de las masas oscuras;
+- líneas internas suaves tipo relieve/paisaje;
+- lectura horizontal más natural.
+
+---
+
+## 5. Parámetros más útiles
+
+### Menos detalle y más limpieza
 
 ```bash
 python3 generate_drawing.py \
   --session S01 \
   --data-root /home/pi/data \
-  --base-scanlines 72 \
-  --samples-per-scanline 220 \
-  --canny-low 35 \
-  --canny-high 110
+  --landscape-bands 6 \
+  --internal-lines 3 \
+  --max-contours 10
 ```
 
-Si quieres menos densidad porque el marcador se satura:
+### Más detalle visual
 
 ```bash
 python3 generate_drawing.py \
   --session S01 \
   --data-root /home/pi/data \
-  --base-scanlines 42 \
-  --samples-per-scanline 140
+  --landscape-bands 8 \
+  --internal-lines 5 \
+  --max-contours 16 \
+  --quantization_levels 6
+```
+
+### Más parecido a paisaje suave
+
+```bash
+python3 generate_drawing.py \
+  --session S01 \
+  --data-root /home/pi/data \
+  --blur-size 9 \
+  --band-amplitude-mm 0.70 \
+  --internal-amplitude-mm 0.40
 ```
 
 ---
 
 ## 6. Salidas
-
-Se generan:
 
 ```text
 /home/pi/data/sessions/S01/output/drawing.svg
@@ -140,7 +138,7 @@ Se generan:
 
 ## 7. Node-RED
 
-El nodo `exec` sigue funcionando igual.
+El `exec` puede seguir funcionando igual.
 
 Comando base:
 
@@ -150,20 +148,21 @@ Comando base:
 
 Con `Append msg.payload` activado.
 
-El Function anterior puede mandar, por ejemplo:
+Function sugerido:
 
 ```text
---session S01 --data-root /home/pi/data --film-width-mm 16 --film-height-mm 43
+--session S01 --data-root /home/pi/data --film-width-mm 43 --film-height-mm 16
 ```
 
 ---
 
-## 8. Idea visual de v2
+## 8. Idea visual de esta versión
 
-El resultado no debe ser ya una pila de ondas abstractas, sino algo más cercano a:
+La meta de v3 no es rellenar toda la película, sino construir una imagen que se lea como:
 
-- una interpretación lineal de la escena;
-- con volumen por sombreado lineal;
-- con contornos reconocibles;
-- y con una sola trayectoria continua apta para un sistema sin levantamiento de pluma.
+- escena resumida,
+- contorno/paisaje,
+- bandas topográficas parciales,
+- estructura principal,
+- y continuidad mecánica posible.
 

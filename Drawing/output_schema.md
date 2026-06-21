@@ -1,4 +1,4 @@
-# Output schema · Drawing v2
+# Output schema · Drawing v3 Landscape
 
 ## Archivos generados
 
@@ -14,21 +14,21 @@
 
 - dibujo vectorial principal;
 - unidades en milímetros;
-- trayectoria continua;
-- apto para mecanismo sin eje Z.
+- orientado horizontalmente por defecto;
+- trayectoria continua pensada para un sistema sin eje Z.
 
 ## `preview.png`
 
-- preview raster del dibujo;
-- sirve para revisar rápidamente si la escena se parece a las fotos.
+- previsualización rápida del dibujo;
+- sirve para comparar si el resultado se siente más paisaje y más reminiscente de la escena.
 
 ## `metadata.json`
 
 Incluye:
 
-- fotos usadas;
-- lecturas ambientales usadas;
-- parámetros visuales derivados del ambiente;
-- datos del análisis de imagen;
-- datos del raster tonal y contornos.
+- fotos utilizadas;
+- lecturas ambientales utilizadas;
+- parámetros derivados del ambiente;
+- análisis de imagen;
+- datos de bandas, contornos y líneas internas.
 

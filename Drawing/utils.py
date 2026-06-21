@@ -1,5 +1,3 @@
-"""Utilidades generales para Drawing."""
-
 import json
 import math
 import re
@@ -19,10 +17,10 @@ def safe_float(value, default=None):
     try:
         if value is None:
             return default
-        result = float(value)
-        if math.isnan(result) or math.isinf(result):
+        x = float(value)
+        if math.isnan(x) or math.isinf(x):
             return default
-        return result
+        return x
     except Exception:
         return default
 
@@ -41,8 +39,7 @@ def ensure_dir(path):
 
 
 def load_json(path):
-    path = Path(path)
-    with path.open("r", encoding="utf-8") as f:
+    with Path(path).open("r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -53,9 +50,9 @@ def save_json(path, data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def natural_sort_key(path_or_string):
-    text = str(path_or_string)
-    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text)]
+def natural_sort_key(path_or_text):
+    text = str(path_or_text)
+    return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", text)]
 
 
 def is_probably_jpeg(path, min_size=2048):
@@ -64,7 +61,7 @@ def is_probably_jpeg(path, min_size=2048):
         if not path.is_file() or path.stat().st_size < min_size:
             return False
         with path.open("rb") as f:
-            header = f.read(3)
-        return header[:3] == b"\xff\xd8\xff"
+            sig = f.read(3)
+        return sig == b"\xff\xd8\xff"
     except Exception:
         return False

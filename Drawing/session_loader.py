@@ -1,5 +1,3 @@
-"""Carga de sesiones desde ~/data/sessions/Sxx."""
-
 from pathlib import Path
 
 from utils import ensure_dir, is_probably_jpeg, load_json, natural_sort_key, safe_float
@@ -15,8 +13,8 @@ def validate_environment_data(data):
         return False
     if data.get("aht_ok") is not True or data.get("ens_ok") is not True:
         return False
-    for key in REQUIRED_ENV_KEYS:
-        if safe_float(data.get(key), None) is None:
+    for k in REQUIRED_ENV_KEYS:
+        if safe_float(data.get(k), None) is None:
             return False
     return True
 
@@ -36,15 +34,15 @@ def list_valid_environment(environment_dir):
     environment_dir = Path(environment_dir)
     if not environment_dir.exists():
         return []
-    records = []
+    results = []
     for path in sorted(environment_dir.glob("*.json"), key=natural_sort_key):
         try:
             data = load_json(path)
         except Exception:
             continue
         if validate_environment_data(data):
-            records.append({"path": path, "data": data})
-    return records
+            results.append({"path": path, "data": data})
+    return results
 
 
 def get_session_paths(data_root, session_id):
@@ -66,9 +64,14 @@ def load_session(data_root, session_id, max_photos=None):
         raise FileNotFoundError(f"No existe la sesión: {paths['session']}")
     ensure_dir(paths["output"])
     photos = list_valid_photos(paths["photos"], max_photos=max_photos)
-    environment = list_valid_environment(paths["environment"])
-    if len(photos) == 0:
+    envs = list_valid_environment(paths["environment"])
+    if not photos:
         raise ValueError(f"La sesión {session_id} no tiene fotos válidas.")
-    if len(environment) == 0:
+    if not envs:
         raise ValueError(f"La sesión {session_id} no tiene lecturas ambientales válidas.")
-    return {"session_id": session_id, "paths": paths, "photos": photos, "environment": environment}
+    return {
+        "session_id": session_id,
+        "paths": paths,
+        "photos": photos,
+        "environment": envs,
+    }
