@@ -1,0 +1,3 @@
+cd ~/Documents/GitHub/contraespacios/Drawing
+source .venv/bin/activate
+python3 generate_drawing.py --session S01 --data-root /home/pi/data --film-width-mm 16 --film-height-mm 43
