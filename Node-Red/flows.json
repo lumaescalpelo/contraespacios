@@ -8,148 +8,48 @@
         "env": []
     },
     {
-        "id": "b5bdbf04c15594bf",
-        "type": "mqtt-broker",
-        "name": "localbroker",
-        "broker": "localhost",
-        "port": 1883,
-        "clientid": "",
-        "autoConnect": true,
-        "usetls": false,
-        "protocolVersion": 4,
-        "keepalive": 60,
-        "cleansession": true,
-        "autoUnsubscribe": true,
-        "birthTopic": "",
-        "birthQos": "0",
-        "birthRetain": "false",
-        "birthPayload": "",
-        "birthMsg": {},
-        "closeTopic": "",
-        "closeQos": "0",
-        "closeRetain": "false",
-        "closePayload": "",
-        "closeMsg": {},
-        "willTopic": "",
-        "willQos": "0",
-        "willRetain": "false",
-        "willPayload": "",
-        "willMsg": {},
-        "userProps": "",
-        "sessionExpiry": ""
-    },
-    {
-        "id": "aa49f97a5a6884dc",
-        "type": "MySQLdatabase",
-        "name": "Ambiente",
-        "host": "127.0.0.1",
-        "port": "3306",
-        "db": "ambiente",
-        "tz": "",
-        "charset": "UTF8"
-    },
-    {
-        "id": "d7ee8f3970d99b29",
-        "type": "ui-base",
-        "name": "UI-Base",
-        "path": "/dashboard",
-        "appIcon": "",
-        "includeClientData": true,
-        "acceptsClientConfig": [
-            "ui-notification",
-            "ui-control"
-        ],
-        "showPathInSidebar": false,
-        "headerContent": "page",
-        "navigationStyle": "default",
-        "titleBarStyle": "default",
-        "showReconnectNotification": true,
-        "notificationDisplayTime": 1,
-        "showDisconnectNotification": true,
-        "allowInstall": false
-    },
-    {
-        "id": "a87e00aa85618721",
-        "type": "ui-theme",
-        "name": "Default Theme",
-        "colors": {
-            "surface": "#ffffff",
-            "primary": "#0094CE",
-            "bgPage": "#eeeeee",
-            "groupBg": "#ffffff",
-            "groupOutline": "#cccccc"
+        "id": "36ae23ed91dfdeaa",
+        "type": "group",
+        "z": "fbdc5aeae38a6415",
+        "style": {
+            "stroke": "#999999",
+            "stroke-opacity": "1",
+            "fill": "none",
+            "fill-opacity": "1",
+            "label": true,
+            "label-position": "nw",
+            "color": "#767676"
         },
-        "sizes": {
-            "density": "default",
-            "pagePadding": "12px",
-            "groupGap": "12px",
-            "groupBorderRadius": "4px",
-            "widgetGap": "12px"
-        }
-    },
-    {
-        "id": "0f0eaccb5697e91f",
-        "type": "ui-page",
-        "name": "Cinemabarredura",
-        "ui": "d7ee8f3970d99b29",
-        "path": "/page1",
-        "icon": "home",
-        "layout": "grid",
-        "theme": "a87e00aa85618721",
-        "breakpoints": [
-            {
-                "name": "Default",
-                "px": "0",
-                "cols": "3"
-            },
-            {
-                "name": "Tablet",
-                "px": "576",
-                "cols": "6"
-            },
-            {
-                "name": "Small Desktop",
-                "px": "768",
-                "cols": "9"
-            },
-            {
-                "name": "Desktop",
-                "px": "1024",
-                "cols": "12"
-            }
+        "nodes": [
+            "414875922b7d6e4e",
+            "49be978a0f12a24b"
         ],
-        "order": 1,
-        "className": "",
-        "visible": "true",
-        "disabled": "false"
+        "x": 1514,
+        "y": 739,
+        "w": 232,
+        "h": 142
     },
     {
-        "id": "234fe54ad600bc36",
-        "type": "ui-group",
-        "name": "Sensor",
-        "page": "0f0eaccb5697e91f",
-        "width": 6,
-        "height": 1,
-        "order": 2,
-        "showTitle": true,
-        "className": "",
-        "visible": "true",
-        "disabled": "false",
-        "groupType": "default"
-    },
-    {
-        "id": "21389756e5510336",
-        "type": "ui-group",
-        "name": "Configuración",
-        "page": "0f0eaccb5697e91f",
-        "width": 6,
-        "height": 1,
-        "order": 1,
-        "showTitle": true,
-        "className": "",
-        "visible": "true",
-        "disabled": "false",
-        "groupType": "default"
+        "id": "2dfeb66569eba99c",
+        "type": "group",
+        "z": "fbdc5aeae38a6415",
+        "style": {
+            "stroke": "#999999",
+            "stroke-opacity": "1",
+            "fill": "none",
+            "fill-opacity": "1",
+            "label": true,
+            "label-position": "nw",
+            "color": "#767676"
+        },
+        "nodes": [
+            "8b88d180c27180ab",
+            "afe179e96ce1b1c1"
+        ],
+        "x": 54,
+        "y": 739,
+        "w": 312,
+        "h": 142
     },
     {
         "id": "8b854a66fc363cba",
@@ -217,7 +117,7 @@
         "type": "function",
         "z": "fbdc5aeae38a6415",
         "name": "capture_photo",
-        "func": "msg.payload = msg.payload.command;\nreturn msg;",
+        "func": "const p = msg.payload || {};\n\nconst sessionId =\n    p.session_id ||\n    p.active_session ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nflow.set(\"active_session\", sessionId);\nflow.set(\"session_has_drawing\", p.session_has_drawing === true);\n\nmsg.session_id = sessionId;\nmsg.session_has_drawing = p.session_has_drawing === true;\nmsg.payload = p;\n\nnode.status({\n    fill: \"blue\",\n    shape: \"dot\",\n    text: `Foto ${sessionId}`\n});\n\nreturn msg;",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
@@ -229,7 +129,7 @@
         "wires": [
             [
                 "f7545f5fc5ed5d01",
-                "456e13f584666ce9"
+                "72b564eb3db0739a"
             ]
         ]
     },
@@ -253,6 +153,16 @@
             },
             {
                 "t": "eq",
+                "v": "new_session",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "select_session",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
                 "v": "generate_drawing",
                 "vt": "str"
             },
@@ -269,7 +179,7 @@
         ],
         "checkall": "true",
         "repair": false,
-        "outputs": 5,
+        "outputs": 7,
         "x": 610,
         "y": 180,
         "wires": [
@@ -279,6 +189,10 @@
             [
                 "bc9cba9969bad616"
             ],
+            [
+                "f7cae1dbc726fb38"
+            ],
+            [],
             [
                 "b2a66ee5b1cd25c8"
             ],
@@ -295,7 +209,7 @@
         "type": "function",
         "z": "fbdc5aeae38a6415",
         "name": "capture_environment",
-        "func": "msg.payload = msg.payload.command;\nreturn msg;",
+        "func": "const p = msg.payload || {};\n\nconst sessionId =\n    p.session_id ||\n    p.active_session ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nflow.set(\"active_session\", sessionId);\nflow.set(\"session_has_drawing\", p.session_has_drawing === true);\n\nmsg.session_id = sessionId;\nmsg.session_has_drawing = p.session_has_drawing === true;\nmsg.payload = p;\n\nnode.status({\n    fill: \"green\",\n    shape: \"dot\",\n    text: `Ambiente ${sessionId}`\n});\n\nreturn msg;",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
@@ -307,7 +221,7 @@
         "wires": [
             [
                 "f7545f5fc5ed5d01",
-                "e6bc243e4dc22857"
+                "31956f420c1de013"
             ]
         ]
     },
@@ -324,7 +238,7 @@
         "finalize": "",
         "libs": [],
         "x": 930,
-        "y": 280,
+        "y": 340,
         "wires": [
             [
                 "f7545f5fc5ed5d01"
@@ -344,7 +258,7 @@
         "finalize": "",
         "libs": [],
         "x": 930,
-        "y": 340,
+        "y": 400,
         "wires": [
             [
                 "f7545f5fc5ed5d01"
@@ -364,7 +278,7 @@
         "finalize": "",
         "libs": [],
         "x": 910,
-        "y": 400,
+        "y": 460,
         "wires": [
             [
                 "f7545f5fc5ed5d01"
@@ -383,8 +297,8 @@
         "complete": "false",
         "statusVal": "",
         "statusType": "auto",
-        "x": 1220,
-        "y": 720,
+        "x": 1460,
+        "y": 640,
         "wires": []
     },
     {
@@ -392,10 +306,10 @@
         "type": "http request",
         "z": "fbdc5aeae38a6415",
         "name": "",
-        "method": "GET",
+        "method": "use",
         "ret": "bin",
         "paytoqs": "ignore",
-        "url": "contracam.local/capture",
+        "url": "http://contracam.local/capture",
         "tls": "",
         "persist": false,
         "proxy": "",
@@ -403,11 +317,11 @@
         "authType": "",
         "senderr": false,
         "headers": [],
-        "x": 470,
-        "y": 540,
+        "x": 370,
+        "y": 700,
         "wires": [
             [
-                "f9bcf92008156283"
+                "a5f67b701c90f255"
             ]
         ]
     },
@@ -415,16 +329,16 @@
         "id": "72b564eb3db0739a",
         "type": "function",
         "z": "fbdc5aeae38a6415",
-        "name": "Set IMG",
-        "func": "const folder = \"/home/pi/imagenes\";\n\nfunction pad(n){ return (n < 10) ? \"0\" + n : \"\" + n; }\n\nconst d = new Date();\n\n// Timestamp legible para nombre de archivo\nconst ts =\n  d.getFullYear() + \"-\" +\n  pad(d.getMonth() + 1) + \"-\" +\n  pad(d.getDate()) + \"_\" +\n  pad(d.getHours()) + \"-\" +\n  pad(d.getMinutes()) + \"-\" +\n  pad(d.getSeconds());\n\n// Guardar rutas en el mensaje\nmsg.filename = `${folder}/${ts}.jpg`;\nmsg.foto_nombre = `${ts}.jpg`;\n\n// También puedes guardar el nombre por comodidad\nglobal.set(\"foto_nombre\", msg.foto_nombre);\n\n// -----------------------\n\nreturn msg;\n",
+        "name": "set_img",
+        "func": "const DATA_ROOT = \"/home/pi/data\"; // Cambiar si tu usuario no es pi\n\nconst sessionId =\n    msg.session_id ||\n    msg.payload?.session_id ||\n    msg.payload?.active_session ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nflow.set(\"active_session\", sessionId);\n\nconst photoKey = `photo_count_${sessionId}`;\nconst candidateCount = (flow.get(photoKey) || 0) + 1;\n\nconst now = new Date();\nconst stamp = now.toISOString()\n    .replace(/[-:]/g, \"\")\n    .replace(/\\.\\d+Z$/, \"Z\");\n\nconst index = String(candidateCount).padStart(3, \"0\");\n\nmsg.session_id = sessionId;\nmsg.photo_count_candidate = candidateCount;\n\nmsg.url = \"http://contracam.local/capture\";\nmsg.method = \"GET\";\n\nmsg.filename = `${DATA_ROOT}/sessions/${sessionId}/photos/photo_${index}_${stamp}.jpg`;\n\nmsg.payload = null;\n\nnode.status({\n    fill: \"blue\",\n    shape: \"dot\",\n    text: `${sessionId} foto ${index}`\n});\n\nreturn msg;",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 240,
-        "y": 540,
+        "x": 140,
+        "y": 700,
         "wires": [
             [
                 "b20db3363f5101dc"
@@ -442,40 +356,11 @@
         "createDir": true,
         "overwriteFile": "true",
         "encoding": "none",
-        "x": 700,
-        "y": 540,
+        "x": 840,
+        "y": 700,
         "wires": [
             [
                 "118a90ed1ccfe36e"
-            ]
-        ]
-    },
-    {
-        "id": "456e13f584666ce9",
-        "type": "link out",
-        "z": "fbdc5aeae38a6415",
-        "name": "Tomar Foto Send",
-        "mode": "link",
-        "links": [
-            "d8cb8bfe8da0e28b"
-        ],
-        "x": 1175,
-        "y": 160,
-        "wires": []
-    },
-    {
-        "id": "d8cb8bfe8da0e28b",
-        "type": "link in",
-        "z": "fbdc5aeae38a6415",
-        "name": "Tomar Foto Receive",
-        "links": [
-            "456e13f584666ce9"
-        ],
-        "x": 105,
-        "y": 540,
-        "wires": [
-            [
-                "72b564eb3db0739a"
             ]
         ]
     },
@@ -486,23 +371,23 @@
         "name": "Tomar Foto",
         "info": "",
         "x": 150,
-        "y": 480,
+        "y": 640,
         "wires": []
     },
     {
         "id": "118a90ed1ccfe36e",
         "type": "function",
         "z": "fbdc5aeae38a6415",
-        "name": "Respuesta pantalla",
-        "func": "flow.set(\"photo_done\", true);\n\nconst response = {\n    type: \"framework_state\",\n    photo: true,\n    photo_done: true,\n    step: \"photo\",\n    state: \"done\",\n    message: \"Foto guardada\",\n    progress: 25\n};\n\nmsg.payload = JSON.stringify(response);\n\nmsg.ip = \"127.0.0.1\";\nmsg.host = \"127.0.0.1\";\nmsg.port = 5006;\n\nreturn msg;",
+        "name": "respuesta_pantalla",
+        "func": "const sessionId =\n    msg.session_id ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nconst photoCount =\n    msg.photo_count_candidate ||\n    flow.get(`photo_count_${sessionId}`) ||\n    1;\n\nflow.set(`photo_count_${sessionId}`, photoCount);\nflow.set(\"photo_done\", true);\n\nconst response = {\n    type: \"framework_state\",\n\n    session_id: sessionId,\n\n    photo: true,\n    photo_done: true,\n    photo_count: photoCount,\n\n    step: \"photo\",\n    state: \"done\",\n    message: `Foto ${String(photoCount).padStart(2, \"0\")} guardada`,\n    progress: 25\n};\n\nif (flow.get(\"environment_done\") === true) {\n    response.environment = true;\n    response.environment_done = true;\n}\n\nif (flow.get(\"session_has_drawing\") === true) {\n    response.session_has_drawing = true;\n    response.drawing = true;\n    response.drawing_done = true;\n}\n\nmsg.payload = JSON.stringify(response);\n\nmsg.ip = \"127.0.0.1\";\nmsg.host = \"127.0.0.1\";\nmsg.port = 5006;\n\nnode.status({\n    fill: \"green\",\n    shape: \"dot\",\n    text: `${sessionId} foto ${photoCount}`\n});\n\nreturn msg;",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 950,
-        "y": 540,
+        "x": 1090,
+        "y": 700,
         "wires": [
             [
                 "414875922b7d6e4e"
@@ -513,6 +398,7 @@
         "id": "414875922b7d6e4e",
         "type": "udp out",
         "z": "fbdc5aeae38a6415",
+        "g": "36ae23ed91dfdeaa",
         "name": "",
         "addr": "127.0.0.1",
         "iface": "",
@@ -521,8 +407,8 @@
         "outport": "",
         "base64": false,
         "multicast": "false",
-        "x": 1250,
-        "y": 540,
+        "x": 1630,
+        "y": 840,
         "wires": []
     },
     {
@@ -532,52 +418,23 @@
         "name": "Medir Ambiente",
         "info": "",
         "x": 160,
-        "y": 780,
+        "y": 940,
         "wires": []
-    },
-    {
-        "id": "e6bc243e4dc22857",
-        "type": "link out",
-        "z": "fbdc5aeae38a6415",
-        "name": "Medir Ambiente Send",
-        "mode": "link",
-        "links": [
-            "575e51c9d0dfc4bd"
-        ],
-        "x": 1175,
-        "y": 220,
-        "wires": []
-    },
-    {
-        "id": "575e51c9d0dfc4bd",
-        "type": "link in",
-        "z": "fbdc5aeae38a6415",
-        "name": "Medir Ambiente Receive",
-        "links": [
-            "e6bc243e4dc22857"
-        ],
-        "x": 95,
-        "y": 840,
-        "wires": [
-            [
-                "31956f420c1de013"
-            ]
-        ]
     },
     {
         "id": "31956f420c1de013",
         "type": "function",
         "z": "fbdc5aeae38a6415",
-        "name": "Solicitar lectura de ambiente",
-        "func": "// Salida 1: comando hacia ESP32 ambiental.\n// Salida 2: estado inmediato hacia OLED.\n\nconst toEsp32 = {\n    payload: JSON.stringify({\n        type: \"command\",\n        command: \"read_environment\",\n        source: \"node-red\",\n        target: \"contraenv\",\n        timestamp: new Date().toISOString()\n    }),\n    ip: \"contraenv.local\",\n    host: \"contraenv.local\",\n    port: 4210\n};\n\nconst toOled = {\n    payload: JSON.stringify({\n        type: \"status\",\n        step: \"environment\",\n        state: \"running\",\n        message: \"Leyendo ambiente\",\n        progress: 30,\n        environment: false,\n        environment_done: false\n    }),\n    ip: \"127.0.0.1\",\n    host: \"127.0.0.1\",\n    port: 5006\n};\n\nreturn [toEsp32, toOled];",
+        "name": "solicitar_lectura_ambiente",
+        "func": "const sessionId =\n    msg.session_id ||\n    msg.payload?.session_id ||\n    msg.payload?.active_session ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nflow.set(\"active_session\", sessionId);\nflow.set(\"pending_environment_session\", sessionId);\n\nconst toEsp32 = {\n    payload: JSON.stringify({\n        type: \"command\",\n        command: \"read_environment\",\n        source: \"node-red\",\n        target: \"contraenv\",\n        session_id: sessionId,\n        timestamp: new Date().toISOString()\n    }),\n\n    ip: \"contraenv.local\",\n    host: \"contraenv.local\",\n    port: 4210\n};\n\nconst toOled = {\n    payload: JSON.stringify({\n        type: \"status\",\n        session_id: sessionId,\n        step: \"environment\",\n        state: \"running\",\n        message: \"Leyendo ambiente\",\n        progress: 30,\n        environment: false,\n        environment_done: false\n    }),\n\n    ip: \"127.0.0.1\",\n    host: \"127.0.0.1\",\n    port: 5006\n};\n\nreturn [toEsp32, toOled];",
         "outputs": 2,
         "timeout": 0,
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 680,
-        "y": 840,
+        "x": 190,
+        "y": 1000,
         "wires": [
             [
                 "c92a4cf3e53d386a"
@@ -603,24 +460,26 @@
         "outport": "",
         "base64": false,
         "multicast": "false",
-        "x": 1270,
-        "y": 840,
+        "x": 1310,
+        "y": 980,
         "wires": []
     },
     {
         "id": "8b88d180c27180ab",
         "type": "comment",
         "z": "fbdc5aeae38a6415",
+        "g": "2dfeb66569eba99c",
         "name": "Recibir Respuesta de ambiente",
         "info": "",
         "x": 210,
-        "y": 620,
+        "y": 780,
         "wires": []
     },
     {
         "id": "afe179e96ce1b1c1",
         "type": "udp in",
         "z": "fbdc5aeae38a6415",
+        "g": "2dfeb66569eba99c",
         "name": "",
         "iface": "",
         "port": "5010",
@@ -629,11 +488,10 @@
         "group": "",
         "datatype": "utf8",
         "x": 140,
-        "y": 680,
+        "y": 840,
         "wires": [
             [
-                "e38712c1cb93a298",
-                "da435bc0072aef74"
+                "e38712c1cb93a298"
             ]
         ]
     },
@@ -645,12 +503,11 @@
         "property": "payload",
         "action": "",
         "pretty": false,
-        "x": 370,
-        "y": 680,
+        "x": 430,
+        "y": 840,
         "wires": [
             [
-                "350768bd95b98620",
-                "da435bc0072aef74"
+                "350768bd95b98620"
             ]
         ]
     },
@@ -658,16 +515,120 @@
         "id": "350768bd95b98620",
         "type": "function",
         "z": "fbdc5aeae38a6415",
-        "name": "Procesar respuesta ambiente",
-        "func": "// Procesa mensajes del ESP32 ambiental.\n// Entrada: msg.payload como objeto, después de UDP IN 5010 + nodo JSON.\n//\n// Salida 1: datos ambientales en msg.payload para trabajar con ellos.\n// Salida 2: mensaje JSON string para actualizar la pantalla OLED.\n\nconst data = msg.payload;\n\nif (!data || typeof data !== \"object\") {\n    return [null, null];\n}\n\nif (data.type !== \"environment\") {\n    return [null, null];\n}\n\n// Guardamos siempre el último mensaje crudo.\nflow.set(\"last_environment_message\", data);\n\n// Datos normalizados para salida 1.\nconst dataOut = {\n    ...msg,\n    payload: {\n        ok: false,\n\n        type: data.type,\n        device: data.device || \"contraenv\",\n        hostname: data.hostname || \"contraenv.local\",\n        ip: data.ip,\n        listen_port: data.listen_port,\n\n        state: data.state,\n        stage: data.stage,\n        message: data.message,\n        progress: data.progress,\n\n        aht_ok: data.aht_ok === true,\n        ens_ok: data.ens_ok === true,\n\n        temperature: data.temperature ?? null,\n        humidity: data.humidity ?? null,\n\n        ens_status: data.ens_status ?? null,\n        aqi: data.aqi ?? null,\n        tvoc: data.tvoc ?? null,\n        eco2: data.eco2 ?? null,\n\n        timestamp: new Date().toISOString()\n    }\n};\n\n// Mensajes de progreso: mandarlos a OLED.\nif (data.state === \"running\") {\n    const oledProgress = {\n        payload: JSON.stringify({\n            type: \"status\",\n            step: \"environment\",\n            state: \"running\",\n            message: data.message || \"Leyendo ambiente\",\n            progress: data.progress || 35\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [dataOut, oledProgress];\n}\n\n// Respuesta final: validar que llegaron TODOS los datos.\nif (data.stage === \"complete\") {\n    const hasTemperature =\n        data.temperature !== null &&\n        data.temperature !== undefined &&\n        !Number.isNaN(Number(data.temperature));\n\n    const hasHumidity =\n        data.humidity !== null &&\n        data.humidity !== undefined &&\n        !Number.isNaN(Number(data.humidity));\n\n    const hasAQI =\n        data.aqi !== null &&\n        data.aqi !== undefined &&\n        !Number.isNaN(Number(data.aqi));\n\n    const hasTVOC =\n        data.tvoc !== null &&\n        data.tvoc !== undefined &&\n        !Number.isNaN(Number(data.tvoc));\n\n    const hasECO2 =\n        data.eco2 !== null &&\n        data.eco2 !== undefined &&\n        !Number.isNaN(Number(data.eco2));\n\n    const hasAllValues =\n        data.state === \"done\" &&\n        data.aht_ok === true &&\n        data.ens_ok === true &&\n        hasTemperature &&\n        hasHumidity &&\n        hasAQI &&\n        hasTVOC &&\n        hasECO2;\n\n    dataOut.payload.ok = hasAllValues;\n\n    dataOut.payload.temperature = hasTemperature ? Number(data.temperature) : null;\n    dataOut.payload.humidity = hasHumidity ? Number(data.humidity) : null;\n    dataOut.payload.aqi = hasAQI ? Number(data.aqi) : null;\n    dataOut.payload.tvoc = hasTVOC ? Number(data.tvoc) : null;\n    dataOut.payload.eco2 = hasECO2 ? Number(data.eco2) : null;\n\n    flow.set(\"last_environment\", dataOut.payload);\n\n    if (hasAllValues) {\n        flow.set(\"environment_done\", true);\n\n        const response = {\n            type: \"framework_state\",\n\n            environment: true,\n            environment_done: true,\n\n            step: \"environment\",\n            state: \"done\",\n            message: \"Ambiente listo\",\n            progress: 50\n        };\n\n        if (flow.get(\"photo_done\") === true) {\n            response.photo = true;\n            response.photo_done = true;\n        }\n\n        const oledOk = {\n            payload: JSON.stringify(response),\n            ip: \"127.0.0.1\",\n            host: \"127.0.0.1\",\n            port: 5006\n        };\n\n        return [dataOut, oledOk];\n    }\n\n    flow.set(\"environment_done\", false);\n\n    let errorMessage = \"Lectura incompleta\";\n\n    if (data.aht_ok !== true) {\n        errorMessage = \"Error temp/hum\";\n    } else if (data.ens_ok !== true) {\n        errorMessage = \"ENS no estable\";\n    } else if (!hasAQI || !hasTVOC || !hasECO2) {\n        errorMessage = \"Faltan gases\";\n    }\n\n    const oledError = {\n        payload: JSON.stringify({\n            type: \"status\",\n            step: \"environment\",\n            state: \"error\",\n            message: errorMessage,\n            progress: 35,\n            environment: false,\n            environment_done: false\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [dataOut, oledError];\n}\n\nif (data.state === \"error\") {\n    flow.set(\"environment_done\", false);\n\n    dataOut.payload.ok = false;\n\n    const oledError = {\n        payload: JSON.stringify({\n            type: \"status\",\n            step: \"environment\",\n            state: \"error\",\n            message: data.message || \"Error ambiente\",\n            progress: data.progress || 25,\n            environment: false,\n            environment_done: false\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [dataOut, oledError];\n}\n\nreturn [dataOut, null];",
+        "name": "procesar_respuesta_ambiente",
+        "func": "const DATA_ROOT = \"/home/pi/data\"; // Cambiar si tu usuario no es pi\n\nconst data = msg.payload;\n\nif (!data || typeof data !== \"object\") {\n    return [null, null];\n}\n\nif (data.type !== \"environment\") {\n    return [null, null];\n}\n\nconst sessionId =\n    data.session_id ||\n    flow.get(\"pending_environment_session\") ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nflow.set(\"active_session\", sessionId);\n\n// ----------------------------------------------------\n// Progreso ambiental hacia OLED\n// ----------------------------------------------------\n\nif (data.state === \"running\") {\n    const oledProgress = {\n        payload: JSON.stringify({\n            type: \"status\",\n            session_id: sessionId,\n            step: \"environment\",\n            state: \"running\",\n            message: data.message || \"Leyendo ambiente\",\n            progress: data.progress || 35\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [null, oledProgress];\n}\n\n// ----------------------------------------------------\n// Validar lectura final\n// ----------------------------------------------------\n\nif (data.stage !== \"complete\") {\n    return [null, null];\n}\n\nconst hasTemperature =\n    data.temperature !== null &&\n    data.temperature !== undefined &&\n    !Number.isNaN(Number(data.temperature));\n\nconst hasHumidity =\n    data.humidity !== null &&\n    data.humidity !== undefined &&\n    !Number.isNaN(Number(data.humidity));\n\nconst hasAQI =\n    data.aqi !== null &&\n    data.aqi !== undefined &&\n    !Number.isNaN(Number(data.aqi));\n\nconst hasTVOC =\n    data.tvoc !== null &&\n    data.tvoc !== undefined &&\n    !Number.isNaN(Number(data.tvoc));\n\nconst hasECO2 =\n    data.eco2 !== null &&\n    data.eco2 !== undefined &&\n    !Number.isNaN(Number(data.eco2));\n\nconst hasAllValues =\n    data.state === \"done\" &&\n    data.aht_ok === true &&\n    data.ens_ok === true &&\n    hasTemperature &&\n    hasHumidity &&\n    hasAQI &&\n    hasTVOC &&\n    hasECO2;\n\nif (!hasAllValues) {\n    flow.set(\"environment_done\", false);\n\n    let errorMessage = \"Lectura incompleta\";\n\n    if (data.aht_ok !== true) {\n        errorMessage = \"Error temp/hum\";\n    } else if (data.ens_ok !== true) {\n        errorMessage = \"ENS no estable\";\n    } else if (!hasAQI || !hasTVOC || !hasECO2) {\n        errorMessage = \"Faltan gases\";\n    }\n\n    node.status({\n        fill: \"red\",\n        shape: \"ring\",\n        text: errorMessage\n    });\n\n    const oledError = {\n        payload: JSON.stringify({\n            type: \"status\",\n            session_id: sessionId,\n            environment: false,\n            environment_done: false,\n            step: \"environment\",\n            state: \"error\",\n            message: errorMessage,\n            progress: 35\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [null, oledError];\n}\n\n// ----------------------------------------------------\n// Preparar guardado de lectura válida\n// ----------------------------------------------------\n\nconst envKey = `environment_count_${sessionId}`;\nconst candidateCount = (flow.get(envKey) || 0) + 1;\n\nconst now = new Date();\nconst stamp = now.toISOString()\n    .replace(/[-:]/g, \"\")\n    .replace(/\\.\\d+Z$/, \"Z\");\n\nconst index = String(candidateCount).padStart(3, \"0\");\n\nconst envData = {\n    ok: true,\n\n    session_id: sessionId,\n    index: candidateCount,\n\n    type: data.type,\n    device: data.device || \"contraenv\",\n    hostname: data.hostname || \"contraenv.local\",\n    ip: data.ip || null,\n\n    state: data.state,\n    stage: data.stage,\n    message: data.message || \"Ambiente listo\",\n    progress: data.progress || 50,\n\n    aht_ok: true,\n    ens_ok: true,\n\n    temperature: Number(data.temperature),\n    humidity: Number(data.humidity),\n\n    ens_status: data.ens_status ?? null,\n    aqi: Number(data.aqi),\n    tvoc: Number(data.tvoc),\n    eco2: Number(data.eco2),\n\n    created_at: now.toISOString()\n};\n\nmsg.session_id = sessionId;\nmsg.environment_count_candidate = candidateCount;\nmsg.environment_data = envData;\n\nmsg.filename = `${DATA_ROOT}/sessions/${sessionId}/environment/env_${index}_${stamp}.json`;\nmsg.payload = JSON.stringify(envData, null, 2);\n\nnode.status({\n    fill: \"green\",\n    shape: \"dot\",\n    text: `${sessionId} env ${index}`\n});\n\nreturn [msg, null];",
         "outputs": 2,
         "timeout": 0,
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 680,
-        "y": 680,
+        "x": 650,
+        "y": 840,
+        "wires": [
+            [
+                "3d4e32f1372c1a23"
+            ],
+            [
+                "414875922b7d6e4e"
+            ]
+        ],
+        "outputLabels": [
+            "write",
+            "5006"
+        ]
+    },
+    {
+        "id": "49be978a0f12a24b",
+        "type": "comment",
+        "z": "fbdc5aeae38a6415",
+        "g": "36ae23ed91dfdeaa",
+        "name": "Enviar a OLED",
+        "info": "",
+        "x": 1620,
+        "y": 780,
+        "wires": []
+    },
+    {
+        "id": "f7cae1dbc726fb38",
+        "type": "function",
+        "z": "fbdc5aeae38a6415",
+        "name": "actualizar_sesion_activa",
+        "func": "const p = msg.payload || {};\n\nconst sessionId =\n    p.session_id ||\n    p.active_session ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nconst hasDrawing = p.session_has_drawing === true;\n\nflow.set(\"active_session\", sessionId);\nflow.set(\"session_has_drawing\", hasDrawing);\n\nmsg.payload = JSON.stringify({\n    type: \"status\",\n    session_id: sessionId,\n    step: \"session\",\n    state: \"done\",\n    message: hasDrawing ? `${sessionId} con dibujo` : `${sessionId} activa`,\n    progress: 0,\n    session_has_drawing: hasDrawing\n});\n\nmsg.ip = \"127.0.0.1\";\nmsg.host = \"127.0.0.1\";\nmsg.port = 5006;\n\nnode.status({\n    fill: \"blue\",\n    shape: \"dot\",\n    text: hasDrawing ? `${sessionId}*` : sessionId\n});\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 950,
+        "y": 280,
+        "wires": [
+            [
+                "414875922b7d6e4e"
+            ]
+        ]
+    },
+    {
+        "id": "a5f67b701c90f255",
+        "type": "function",
+        "z": "fbdc5aeae38a6415",
+        "name": "validar_foto",
+        "func": "\n// Valida que la respuesta de la ESP32CAM sea una imagen JPEG real.\n// Salida 1: foto válida hacia write file.\n// Salida 2: error hacia OLED.\n\nconst sessionId =\n    msg.session_id ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nconst payload = msg.payload;\n\nconst isBuffer = Buffer.isBuffer(payload);\nconst size = isBuffer ? payload.length : 0;\n\nconst looksLikeJpeg =\n    isBuffer &&\n    size > 2048 &&\n    payload[0] === 0xFF &&\n    payload[1] === 0xD8 &&\n    payload[2] === 0xFF;\n\nif (!looksLikeJpeg) {\n    node.status({\n        fill: \"red\",\n        shape: \"ring\",\n        text: `Foto inválida ${size} bytes`\n    });\n\n    const oledError = {\n        payload: JSON.stringify({\n            type: \"status\",\n            session_id: sessionId,\n            step: \"photo\",\n            state: \"error\",\n            message: \"Foto invalida\",\n            progress: 20,\n            photo: false,\n            photo_done: false\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [null, oledError];\n}\n\nnode.status({\n    fill: \"green\",\n    shape: \"dot\",\n    text: `Foto OK ${Math.round(size / 1024)} KB`\n});\n\nreturn [msg, null];",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 610,
+        "y": 700,
+        "wires": [
+            [
+                "f9bcf92008156283"
+            ],
+            [
+                "414875922b7d6e4e"
+            ]
+        ],
+        "outputLabels": [
+            "write",
+            "5006"
+        ]
+    },
+    {
+        "id": "3d4e32f1372c1a23",
+        "type": "file",
+        "z": "fbdc5aeae38a6415",
+        "name": "",
+        "filename": "filename",
+        "filenameType": "msg",
+        "appendNewline": true,
+        "createDir": true,
+        "overwriteFile": "true",
+        "encoding": "utf8",
+        "x": 880,
+        "y": 820,
+        "wires": [
+            [
+                "a592552c9a8b24db"
+            ]
+        ]
+    },
+    {
+        "id": "a592552c9a8b24db",
+        "type": "function",
+        "z": "fbdc5aeae38a6415",
+        "name": "respuesta_ambiente_guardado",
+        "func": "const sessionId =\n    msg.session_id ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nconst envCount =\n    msg.environment_count_candidate ||\n    flow.get(`environment_count_${sessionId}`) ||\n    1;\n\nflow.set(`environment_count_${sessionId}`, envCount);\nflow.set(\"environment_done\", true);\n\nconst envData = msg.environment_data || {};\nflow.set(\"last_environment\", envData);\n\nconst dataOut = {\n    ...msg,\n    payload: {\n        ...envData,\n        file: msg.filename,\n        environment_count: envCount\n    }\n};\n\nconst oledOut = {\n    payload: JSON.stringify({\n        type: \"framework_state\",\n\n        session_id: sessionId,\n\n        environment: true,\n        environment_done: true,\n        environment_count: envCount,\n\n        step: \"environment\",\n        state: \"done\",\n        message: `Amb ${String(envCount).padStart(2, \"0\")} guardado`,\n        progress: 50\n    }),\n\n    ip: \"127.0.0.1\",\n    host: \"127.0.0.1\",\n    port: 5006\n};\n\nnode.status({\n    fill: \"green\",\n    shape: \"dot\",\n    text: `${sessionId} amb ${envCount}`\n});\n\nreturn [dataOut, oledOut];",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1110,
+        "y": 820,
         "wires": [
             [
                 "45cbd856808d32bf"
@@ -678,52 +639,7 @@
         ],
         "outputLabels": [
             "debug",
-            "udp out"
+            "5006"
         ]
-    },
-    {
-        "id": "bf257f397d40922c",
-        "type": "comment",
-        "z": "fbdc5aeae38a6415",
-        "name": "Hay que insertar un nodo de escribir archivo de lectura ambiental aquí",
-        "info": "",
-        "x": 1090,
-        "y": 880,
-        "wires": []
-    },
-    {
-        "id": "49be978a0f12a24b",
-        "type": "comment",
-        "z": "fbdc5aeae38a6415",
-        "name": "Enviar a OLED",
-        "info": "",
-        "x": 1240,
-        "y": 480,
-        "wires": []
-    },
-    {
-        "id": "da435bc0072aef74",
-        "type": "debug",
-        "z": "fbdc5aeae38a6415",
-        "name": "debug 3",
-        "active": true,
-        "tosidebar": true,
-        "console": false,
-        "tostatus": false,
-        "complete": "false",
-        "statusVal": "",
-        "statusType": "auto",
-        "x": 580,
-        "y": 780,
-        "wires": []
-    },
-    {
-        "id": "b8aff02d406afbbd",
-        "type": "global-config",
-        "env": [],
-        "modules": {
-            "node-red-node-mysql": "3.0.0",
-            "@flowfuse/node-red-dashboard": "1.30.2"
-        }
     }
 ]
