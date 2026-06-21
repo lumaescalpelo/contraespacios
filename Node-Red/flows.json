@@ -569,20 +569,26 @@
         "type": "function",
         "z": "fbdc5aeae38a6415",
         "name": "Solicitar lectura de ambiente",
-        "func": "// Salida 1: comando hacia ESP32 ambiental.\n// Salida 2: estado inmediato hacia OLED.\n\nconst toEsp32 = {\n    payload: JSON.stringify({\n        type: \"command\",\n        command: \"read_environment\",\n        source: \"node-red\",\n        target: \"contraenv\",\n        timestamp: new Date().toISOString()\n    }),\n    ip: \"contraenv.local\",\n    host: \"contraenv.local\",\n    port: 4210\n};\n\nconst toOled = {\n    payload: JSON.stringify({\n        type: \"status\",\n        step: \"environment\",\n        state: \"running\",\n        message: \"Leyendo ambiente\",\n        progress: 30\n    }),\n    ip: \"127.0.0.1\",\n    host: \"127.0.0.1\",\n    port: 5006\n};\n\nreturn [toEsp32, toOled];",
-        "outputs": 1,
+        "func": "// Salida 1: comando hacia ESP32 ambiental.\n// Salida 2: estado inmediato hacia OLED.\n\nconst toEsp32 = {\n    payload: JSON.stringify({\n        type: \"command\",\n        command: \"read_environment\",\n        source: \"node-red\",\n        target: \"contraenv\",\n        timestamp: new Date().toISOString()\n    }),\n    ip: \"contraenv.local\",\n    host: \"contraenv.local\",\n    port: 4210\n};\n\nconst toOled = {\n    payload: JSON.stringify({\n        type: \"status\",\n        step: \"environment\",\n        state: \"running\",\n        message: \"Leyendo ambiente\",\n        progress: 30,\n        environment: false,\n        environment_done: false\n    }),\n    ip: \"127.0.0.1\",\n    host: \"127.0.0.1\",\n    port: 5006\n};\n\nreturn [toEsp32, toOled];",
+        "outputs": 2,
         "timeout": 0,
         "noerr": 0,
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 300,
+        "x": 680,
         "y": 840,
         "wires": [
             [
-                "c92a4cf3e53d386a",
-                "45cbd856808d32bf"
+                "c92a4cf3e53d386a"
+            ],
+            [
+                "414875922b7d6e4e"
             ]
+        ],
+        "outputLabels": [
+            "4210",
+            "5006"
         ]
     },
     {
@@ -653,8 +659,8 @@
         "type": "function",
         "z": "fbdc5aeae38a6415",
         "name": "Procesar respuesta ambiente",
-        "func": "// Procesa mensajes del ESP32 ambiental.\n// Entrada: msg.payload como objeto, después de UDP IN 5010 + nodo JSON.\n//\n// Salida 1: datos ambientales en msg.payload para trabajar con ellos.\n// Salida 2: mensaje UDP para actualizar la pantalla OLED.\n\nconst data = msg.payload;\n\nif (!data || typeof data !== \"object\") {\n    return [null, null];\n}\n\nif (data.type !== \"environment\") {\n    return [null, null];\n}\n\n// Guardamos siempre el último mensaje crudo.\nflow.set(\"last_environment_message\", data);\n\n// ----------------------------------------------------\n// SALIDA 1: siempre deja los datos en msg.payload\n// ----------------------------------------------------\n\nconst dataOut = {\n    ...msg,\n    payload: {\n        ok: false,\n\n        type: data.type,\n        device: data.device || \"contraenv\",\n        hostname: data.hostname || \"contraenv.local\",\n        ip: data.ip,\n        listen_port: data.listen_port,\n\n        state: data.state,\n        stage: data.stage,\n        message: data.message,\n        progress: data.progress,\n\n        aht_ok: data.aht_ok === true,\n        ens_ok: data.ens_ok === true,\n\n        temperature: data.temperature ?? null,\n        humidity: data.humidity ?? null,\n\n        ens_status: data.ens_status ?? null,\n        aqi: data.aqi ?? null,\n        tvoc: data.tvoc ?? null,\n        eco2: data.eco2 ?? null,\n\n        timestamp: new Date().toISOString()\n    }\n};\n\n// ----------------------------------------------------\n// 1. Mensajes de progreso: actualizar OLED\n// ----------------------------------------------------\n\nif (data.state === \"running\") {\n    const oledProgress = {\n        payload: JSON.stringify({\n            type: \"status\",\n            step: \"environment\",\n            state: \"running\",\n            message: data.message || \"Leyendo ambiente\",\n            progress: data.progress || 35\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    // También sacamos el mensaje por salida 1 para debug o registro.\n    return [dataOut, oledProgress];\n}\n\n// ----------------------------------------------------\n// 2. Respuesta final: validar si llegaron TODOS los datos\n// ----------------------------------------------------\n\nif (data.stage === \"complete\") {\n    const hasTemperature =\n        data.temperature !== null &&\n        data.temperature !== undefined &&\n        !Number.isNaN(Number(data.temperature));\n\n    const hasHumidity =\n        data.humidity !== null &&\n        data.humidity !== undefined &&\n        !Number.isNaN(Number(data.humidity));\n\n    const hasAQI =\n        data.aqi !== null &&\n        data.aqi !== undefined &&\n        !Number.isNaN(Number(data.aqi));\n\n    const hasTVOC =\n        data.tvoc !== null &&\n        data.tvoc !== undefined &&\n        !Number.isNaN(Number(data.tvoc));\n\n    const hasECO2 =\n        data.eco2 !== null &&\n        data.eco2 !== undefined &&\n        !Number.isNaN(Number(data.eco2));\n\n    const hasAllValues =\n        data.state === \"done\" &&\n        data.aht_ok === true &&\n        data.ens_ok === true &&\n        hasTemperature &&\n        hasHumidity &&\n        hasAQI &&\n        hasTVOC &&\n        hasECO2;\n\n    dataOut.payload.ok = hasAllValues;\n\n    // Convertir a número solo si existen.\n    dataOut.payload.temperature = hasTemperature ? Number(data.temperature) : null;\n    dataOut.payload.humidity = hasHumidity ? Number(data.humidity) : null;\n    dataOut.payload.aqi = hasAQI ? Number(data.aqi) : null;\n    dataOut.payload.tvoc = hasTVOC ? Number(data.tvoc) : null;\n    dataOut.payload.eco2 = hasECO2 ? Number(data.eco2) : null;\n\n    flow.set(\"last_environment\", dataOut.payload);\n\n    if (hasAllValues) {\n        flow.set(\"environment_done\", true);\n\n        const response = {\n            type: \"framework_state\",\n\n            environment: true,\n            environment_done: true,\n\n            step: \"environment\",\n            state: \"done\",\n            message: \"Ambiente listo\",\n            progress: 50\n        };\n\n        // Conservar foto OK si ya fue tomada.\n        if (flow.get(\"photo_done\") === true) {\n            response.photo = true;\n            response.photo_done = true;\n        }\n\n        const oledOk = {\n            payload: JSON.stringify(response),\n            ip: \"127.0.0.1\",\n            host: \"127.0.0.1\",\n            port: 5006\n        };\n\n        return [dataOut, oledOk];\n    }\n\n    // Si falta AQI/TVOC/eCO2 o algo llegó null, NO marcar OK.\n    flow.set(\"environment_done\", false);\n\n    let errorMessage = \"Lectura incompleta\";\n\n    if (data.aht_ok !== true) {\n        errorMessage = \"Error temp/hum\";\n    } else if (data.ens_ok !== true) {\n        errorMessage = \"ENS no estable\";\n    } else if (!hasAQI || !hasTVOC || !hasECO2) {\n        errorMessage = \"Faltan gases\";\n    }\n\n    const oledError = {\n        payload: JSON.stringify({\n            type: \"status\",\n            step: \"environment\",\n            state: \"error\",\n            message: errorMessage,\n            progress: 35\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [dataOut, oledError];\n}\n\n// ----------------------------------------------------\n// 3. Cualquier error reportado antes del final\n// ----------------------------------------------------\n\nif (data.state === \"error\") {\n    flow.set(\"environment_done\", false);\n\n    dataOut.payload.ok = false;\n\n    const oledError = {\n        payload: JSON.stringify({\n            type: \"status\",\n            step: \"environment\",\n            state: \"error\",\n            message: data.message || \"Error ambiente\",\n            progress: data.progress || 25\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [dataOut, oledError];\n}\n\nreturn [dataOut, null];",
-        "outputs": 1,
+        "func": "// Procesa mensajes del ESP32 ambiental.\n// Entrada: msg.payload como objeto, después de UDP IN 5010 + nodo JSON.\n//\n// Salida 1: datos ambientales en msg.payload para trabajar con ellos.\n// Salida 2: mensaje JSON string para actualizar la pantalla OLED.\n\nconst data = msg.payload;\n\nif (!data || typeof data !== \"object\") {\n    return [null, null];\n}\n\nif (data.type !== \"environment\") {\n    return [null, null];\n}\n\n// Guardamos siempre el último mensaje crudo.\nflow.set(\"last_environment_message\", data);\n\n// Datos normalizados para salida 1.\nconst dataOut = {\n    ...msg,\n    payload: {\n        ok: false,\n\n        type: data.type,\n        device: data.device || \"contraenv\",\n        hostname: data.hostname || \"contraenv.local\",\n        ip: data.ip,\n        listen_port: data.listen_port,\n\n        state: data.state,\n        stage: data.stage,\n        message: data.message,\n        progress: data.progress,\n\n        aht_ok: data.aht_ok === true,\n        ens_ok: data.ens_ok === true,\n\n        temperature: data.temperature ?? null,\n        humidity: data.humidity ?? null,\n\n        ens_status: data.ens_status ?? null,\n        aqi: data.aqi ?? null,\n        tvoc: data.tvoc ?? null,\n        eco2: data.eco2 ?? null,\n\n        timestamp: new Date().toISOString()\n    }\n};\n\n// Mensajes de progreso: mandarlos a OLED.\nif (data.state === \"running\") {\n    const oledProgress = {\n        payload: JSON.stringify({\n            type: \"status\",\n            step: \"environment\",\n            state: \"running\",\n            message: data.message || \"Leyendo ambiente\",\n            progress: data.progress || 35\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [dataOut, oledProgress];\n}\n\n// Respuesta final: validar que llegaron TODOS los datos.\nif (data.stage === \"complete\") {\n    const hasTemperature =\n        data.temperature !== null &&\n        data.temperature !== undefined &&\n        !Number.isNaN(Number(data.temperature));\n\n    const hasHumidity =\n        data.humidity !== null &&\n        data.humidity !== undefined &&\n        !Number.isNaN(Number(data.humidity));\n\n    const hasAQI =\n        data.aqi !== null &&\n        data.aqi !== undefined &&\n        !Number.isNaN(Number(data.aqi));\n\n    const hasTVOC =\n        data.tvoc !== null &&\n        data.tvoc !== undefined &&\n        !Number.isNaN(Number(data.tvoc));\n\n    const hasECO2 =\n        data.eco2 !== null &&\n        data.eco2 !== undefined &&\n        !Number.isNaN(Number(data.eco2));\n\n    const hasAllValues =\n        data.state === \"done\" &&\n        data.aht_ok === true &&\n        data.ens_ok === true &&\n        hasTemperature &&\n        hasHumidity &&\n        hasAQI &&\n        hasTVOC &&\n        hasECO2;\n\n    dataOut.payload.ok = hasAllValues;\n\n    dataOut.payload.temperature = hasTemperature ? Number(data.temperature) : null;\n    dataOut.payload.humidity = hasHumidity ? Number(data.humidity) : null;\n    dataOut.payload.aqi = hasAQI ? Number(data.aqi) : null;\n    dataOut.payload.tvoc = hasTVOC ? Number(data.tvoc) : null;\n    dataOut.payload.eco2 = hasECO2 ? Number(data.eco2) : null;\n\n    flow.set(\"last_environment\", dataOut.payload);\n\n    if (hasAllValues) {\n        flow.set(\"environment_done\", true);\n\n        const response = {\n            type: \"framework_state\",\n\n            environment: true,\n            environment_done: true,\n\n            step: \"environment\",\n            state: \"done\",\n            message: \"Ambiente listo\",\n            progress: 50\n        };\n\n        if (flow.get(\"photo_done\") === true) {\n            response.photo = true;\n            response.photo_done = true;\n        }\n\n        const oledOk = {\n            payload: JSON.stringify(response),\n            ip: \"127.0.0.1\",\n            host: \"127.0.0.1\",\n            port: 5006\n        };\n\n        return [dataOut, oledOk];\n    }\n\n    flow.set(\"environment_done\", false);\n\n    let errorMessage = \"Lectura incompleta\";\n\n    if (data.aht_ok !== true) {\n        errorMessage = \"Error temp/hum\";\n    } else if (data.ens_ok !== true) {\n        errorMessage = \"ENS no estable\";\n    } else if (!hasAQI || !hasTVOC || !hasECO2) {\n        errorMessage = \"Faltan gases\";\n    }\n\n    const oledError = {\n        payload: JSON.stringify({\n            type: \"status\",\n            step: \"environment\",\n            state: \"error\",\n            message: errorMessage,\n            progress: 35,\n            environment: false,\n            environment_done: false\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [dataOut, oledError];\n}\n\nif (data.state === \"error\") {\n    flow.set(\"environment_done\", false);\n\n    dataOut.payload.ok = false;\n\n    const oledError = {\n        payload: JSON.stringify({\n            type: \"status\",\n            step: \"environment\",\n            state: \"error\",\n            message: data.message || \"Error ambiente\",\n            progress: data.progress || 25,\n            environment: false,\n            environment_done: false\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [dataOut, oledError];\n}\n\nreturn [dataOut, null];",
+        "outputs": 2,
         "timeout": 0,
         "noerr": 0,
         "initialize": "",
@@ -664,9 +670,15 @@
         "y": 680,
         "wires": [
             [
-                "414875922b7d6e4e",
                 "45cbd856808d32bf"
+            ],
+            [
+                "414875922b7d6e4e"
             ]
+        ],
+        "outputLabels": [
+            "debug",
+            "udp out"
         ]
     },
     {
@@ -675,7 +687,7 @@
         "z": "fbdc5aeae38a6415",
         "name": "Hay que insertar un nodo de escribir archivo de lectura ambiental aquí",
         "info": "",
-        "x": 810,
+        "x": 1090,
         "y": 880,
         "wires": []
     },
@@ -706,7 +718,7 @@
         "wires": []
     },
     {
-        "id": "511a3e3fca892da7",
+        "id": "b8aff02d406afbbd",
         "type": "global-config",
         "env": [],
         "modules": {
