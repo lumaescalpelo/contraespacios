@@ -90,7 +90,7 @@ running = True
 events: "queue.Queue[tuple[str, object]]" = queue.Queue()
 
 # Se configura en main() con --data-root.
-DATA_ROOT: Path = Path.home() / "Documents" / "GitHub" / "contraespacios" / "data"
+DATA_ROOT: Path = Path.home() / "data"
 STATE_FILE: Path = DATA_ROOT / "state.json"
 SESSIONS_DIR: Path = DATA_ROOT / "sessions"
 MAX_SESSIONS = 64
@@ -1139,8 +1139,8 @@ def parse_args():
     parser.add_argument("--screen-test", action="store_true")
     parser.add_argument(
         "--data-root",
-        default=str(Path.home() / "Documents" / "GitHub" / "contraespacios" / "data"),
-        help="Carpeta base para state.json y sessions/",
+        default=str(Path.home() / "data"),
+        help="Carpeta persistente para state.json y sessions/. Por defecto: ~/data",
     )
 
     parser.add_argument("--udp-send-host", default="127.0.0.1")
