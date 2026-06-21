@@ -26,6 +26,7 @@ import socket
 import threading
 import time
 from dataclasses import dataclass, asdict
+from pathlib import Path
 from typing import Optional
 
 from gpiozero import Button
@@ -58,31 +59,304 @@ class FrameworkState:
     drawing_done: bool = False
     gcode_done: bool = False
     executed_done: bool = False
+    photo_count: int = 0
+    environment_count: int = 0
     current_step: str = "inicio"
     current_state: str = "idle"
     last_message: str = "Sistema iniciado"
     progress: int = 0
     last_update: str = ""
+    active_session: str = "S01"
+    session_has_drawing: bool = False
+    session_total: int = 1
+    session_position: int = 1
 
 
 MENU_ITEMS = [
     ("Capturar foto", "capture_photo"),
     ("Capturar ambiente", "capture_environment"),
+    ("Nueva sesion", "new_session"),
+    ("Seleccionar sesion", "select_session"),
     ("Generar dibujo", "generate_drawing"),
     ("Ejecutar dibujo", "execute_drawing"),
     ("Estado", "show_status"),
-    ("Acerca de", "show_about"),
 ]
 
 state = FrameworkState()
 menu_index = 0
+session_select_index = 0
 current_screen = "splash"
 running = True
 events: "queue.Queue[tuple[str, object]]" = queue.Queue()
 
+# Se configura en main() con --data-root.
+DATA_ROOT: Path = Path.home() / "Documents" / "GitHub" / "contraespacios" / "data"
+STATE_FILE: Path = DATA_ROOT / "state.json"
+SESSIONS_DIR: Path = DATA_ROOT / "sessions"
+MAX_SESSIONS = 64
+
 
 def now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def session_sort_key(session_id: str) -> int:
+    try:
+        return int(str(session_id).replace("S", ""))
+    except Exception:
+        return 9999
+
+
+def valid_session_id(session_id: str) -> bool:
+    if not isinstance(session_id, str):
+        return False
+    if len(session_id) != 3 or not session_id.startswith("S"):
+        return False
+    try:
+        n = int(session_id[1:])
+    except Exception:
+        return False
+    return 1 <= n <= MAX_SESSIONS
+
+
+def session_dir(session_id: str) -> Path:
+    return SESSIONS_DIR / session_id
+
+
+def session_json_path(session_id: str) -> Path:
+    return session_dir(session_id) / "session.json"
+
+
+def default_session_doc(session_id: str) -> dict:
+    return {
+        "session_id": session_id,
+        "status": "collecting",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "photo_count": 0,
+        "environment_count": 0,
+        "drawing_done": False,
+        "gcode_done": False,
+        "executed_done": False,
+        "photos": [],
+        "environment": [],
+        "output": {
+            "drawing_svg": None,
+            "gcode": None,
+            "metadata": None,
+        },
+    }
+
+
+def read_json_file(path: Path, default):
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"No se pudo leer JSON {path}: {exc}")
+    return default
+
+
+def write_json_file(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def scan_sessions() -> list[str]:
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    sessions: list[str] = []
+    for item in SESSIONS_DIR.iterdir():
+        if item.is_dir() and valid_session_id(item.name):
+            sessions.append(item.name)
+    sessions.sort(key=session_sort_key)
+    return sessions
+
+
+def detect_session_has_drawing(session_id: str, doc: Optional[dict] = None) -> bool:
+    if doc is None:
+        doc = read_json_file(session_json_path(session_id), {})
+    if bool(doc.get("drawing_done")):
+        return True
+    output = doc.get("output", {}) if isinstance(doc.get("output", {}), dict) else {}
+    for key in ("drawing_svg", "gcode", "metadata"):
+        value = output.get(key)
+        if value:
+            return True
+    out_dir = session_dir(session_id) / "output"
+    if (out_dir / "drawing.svg").exists():
+        return True
+    if (out_dir / "dibujo.svg").exists():
+        return True
+    return False
+
+
+def ensure_session(session_id: str) -> dict:
+    if not valid_session_id(session_id):
+        session_id = "S01"
+
+    d = session_dir(session_id)
+    (d / "photos").mkdir(parents=True, exist_ok=True)
+    (d / "environment").mkdir(parents=True, exist_ok=True)
+    (d / "output").mkdir(parents=True, exist_ok=True)
+
+    path = session_json_path(session_id)
+    if path.exists():
+        doc = read_json_file(path, default_session_doc(session_id))
+    else:
+        doc = default_session_doc(session_id)
+
+    doc["session_id"] = session_id
+    doc.setdefault("status", "collecting")
+    doc.setdefault("created_at", now_iso())
+    doc["updated_at"] = now_iso()
+    doc.setdefault("photo_count", 0)
+    doc.setdefault("environment_count", 0)
+    doc.setdefault("drawing_done", False)
+    doc.setdefault("gcode_done", False)
+    doc.setdefault("executed_done", False)
+    doc.setdefault("photos", [])
+    doc.setdefault("environment", [])
+    doc.setdefault("output", {"drawing_svg": None, "gcode": None, "metadata": None})
+    write_json_file(path, doc)
+    return doc
+
+
+def active_session_from_state_file() -> str:
+    state_doc = read_json_file(STATE_FILE, {})
+    session_id = state_doc.get("active_session", "S01")
+    if not valid_session_id(session_id):
+        session_id = "S01"
+    return session_id
+
+
+def write_global_state(active_session: str) -> None:
+    sessions = scan_sessions()
+    state_doc = read_json_file(STATE_FILE, {})
+    state_doc.update({
+        "active_session": active_session,
+        "last_session": active_session,
+        "max_sessions": MAX_SESSIONS,
+        "session_count": len(sessions),
+        "updated_at": now_iso(),
+    })
+    write_json_file(STATE_FILE, state_doc)
+
+
+def refresh_session_state(session_id: Optional[str] = None) -> None:
+    global session_select_index
+
+    if session_id is None:
+        session_id = state.active_session
+    if not valid_session_id(session_id):
+        session_id = "S01"
+
+    doc = ensure_session(session_id)
+    write_global_state(session_id)
+
+    sessions = scan_sessions()
+    if session_id not in sessions:
+        sessions.append(session_id)
+        sessions.sort(key=session_sort_key)
+
+    position = sessions.index(session_id) + 1 if session_id in sessions else 1
+    total = max(1, len(sessions))
+    session_select_index = position - 1
+
+    state.active_session = session_id
+    state.session_total = total
+    state.session_position = position
+    state.session_has_drawing = detect_session_has_drawing(session_id, doc)
+    state.photo_count = int(doc.get("photo_count", 0) or 0)
+    state.environment_count = int(doc.get("environment_count", 0) or 0)
+    state.photo_done = state.photo_count > 0
+    state.environment_done = state.environment_count > 0
+    state.drawing_done = bool(doc.get("drawing_done", False))
+    state.gcode_done = bool(doc.get("gcode_done", False))
+    state.executed_done = bool(doc.get("executed_done", False))
+
+
+def update_active_session_doc() -> None:
+    session_id = state.active_session
+    if not valid_session_id(session_id):
+        return
+
+    doc = ensure_session(session_id)
+    doc["updated_at"] = now_iso()
+    doc["photo_count"] = int(state.photo_count)
+    doc["environment_count"] = int(state.environment_count)
+    doc["drawing_done"] = bool(state.drawing_done)
+    doc["gcode_done"] = bool(state.gcode_done)
+    doc["executed_done"] = bool(state.executed_done)
+
+    if state.executed_done:
+        doc["status"] = "executed"
+    elif state.gcode_done:
+        doc["status"] = "gcode_generated"
+    elif state.drawing_done or state.session_has_drawing:
+        doc["status"] = "drawing_generated"
+    else:
+        doc.setdefault("status", "collecting")
+
+    write_json_file(session_json_path(session_id), doc)
+    write_global_state(session_id)
+
+
+def init_sessions(data_root: Path) -> None:
+    global DATA_ROOT, STATE_FILE, SESSIONS_DIR
+    DATA_ROOT = data_root.expanduser().resolve()
+    STATE_FILE = DATA_ROOT / "state.json"
+    SESSIONS_DIR = DATA_ROOT / "sessions"
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+
+    sessions = scan_sessions()
+    if not sessions:
+        ensure_session("S01")
+        write_global_state("S01")
+        refresh_session_state("S01")
+        return
+
+    active = active_session_from_state_file()
+    if active not in sessions:
+        active = sessions[0]
+    refresh_session_state(active)
+
+
+def next_available_session() -> Optional[str]:
+    used = set(scan_sessions())
+    for i in range(1, MAX_SESSIONS + 1):
+        candidate = f"S{i:02d}"
+        if candidate not in used:
+            return candidate
+    return None
+
+
+def session_label(session_id: Optional[str] = None) -> str:
+    if session_id is None:
+        session_id = state.active_session
+    star = "*" if state.session_has_drawing and session_id == state.active_session else ""
+    return f"{session_id}{star}"
+
+
+def create_new_session() -> Optional[str]:
+    session_id = next_available_session()
+    if session_id is None:
+        return None
+    ensure_session(session_id)
+    refresh_session_state(session_id)
+    return session_id
+
+
+def select_session_by_index(index: int) -> Optional[str]:
+    sessions = scan_sessions()
+    if not sessions:
+        ensure_session("S01")
+        sessions = ["S01"]
+    index = max(0, min(len(sessions) - 1, index))
+    session_id = sessions[index]
+    refresh_session_state(session_id)
+    return session_id
 
 
 def get_pin_factory():
@@ -339,11 +613,22 @@ class UDPBridge:
             except OSError:
                 break
 
+            raw = data.decode("utf-8", errors="replace").strip()
+
             try:
-                payload = json.loads(data.decode("utf-8"))
-                events.put(("udp", payload))
+                payload = json.loads(raw)
+
+                # Solo aceptamos objetos JSON.
+                # Si por error Node-RED manda "[object Object]" o una lista,
+                # no debe romper la pantalla ni reemplazar el estado visible.
+                if isinstance(payload, dict):
+                    events.put(("udp", payload))
+                else:
+                    print(f"UDP ignorado, JSON no es objeto: {raw[:80]}")
+
             except Exception as exc:
-                events.put(("udp_error", f"UDP inválido: {exc}"))
+                # No mostramos esto en OLED para no tapar progreso/estado real.
+                print(f"UDP inválido ignorado: {exc} | raw={raw[:80]}")
 
 
 udp: Optional[UDPBridge] = None
@@ -364,7 +649,7 @@ def show_splash() -> None:
 
 
 def show_menu() -> None:
-    lines = []
+    lines = [f"SES {session_label()}"]
     for i, (label, _command) in enumerate(MENU_ITEMS):
         prefix = ">" if i == menu_index else " "
         lines.append(f"{prefix} {label}")
@@ -409,32 +694,66 @@ def okmark(value: bool) -> str:
 
 def show_status() -> None:
     # Pantalla visible real: 128x96.
-    # Usamos solo 7 lineas compactas para que no se corte abajo.
+    # Estado compacto con sesión visible.
     step = short_step(state.current_step)
     mode = short_state(state.current_state)
     message = str(state.last_message).replace("\n", " ").strip()
 
     display.show([
-        f"EST {state.progress:3d}% {mode[:7]}",
+        f"EST {state.progress:3d}% {mode[:5]}",
+        f"Ses:{session_label()}",
         f"Paso:{step[:16]}",
         f"Msg:{message[:17]}",
-        f"F:{okmark(state.photo_done)} A:{okmark(state.environment_done)}",
+        f"F:{state.photo_count:02d} A:{state.environment_count:02d}",
         f"Dib:{okmark(state.drawing_done)} G:{okmark(state.gcode_done)}",
-        f"Exec:{okmark(state.executed_done)}",
-        f"{state.last_update[-8:] if state.last_update else ''}",
+        f"Ex:{okmark(state.executed_done)} {state.last_update[-8:] if state.last_update else ''}",
     ])
 
 
-def show_about() -> None:
+def show_session_created(session_id: str) -> None:
     display.show([
-        "ACERCA DE",
-        "Contra Espacios",
-        "Interfaz local",
-        "OLED + botones",
-        "envia comandos",
-        "UDP a Node-RED",
-        "y muestra estado",
-        "del framework.",
+        "NUEVA SESION",
+        f"Activa: {session_label(session_id)}",
+        "",
+        "Todo se guarda",
+        "en esta sesion",
+        "",
+        "Select: menu",
+    ])
+
+
+def show_no_sessions_available() -> None:
+    display.show([
+        "SESIONES LLENAS",
+        "Maximo 64",
+        "No se creo",
+        "nueva sesion",
+        "",
+        "Volver: menu",
+    ])
+
+
+def show_session_select() -> None:
+    sessions = scan_sessions()
+    if not sessions:
+        ensure_session("S01")
+        sessions = ["S01"]
+
+    idx = max(0, min(session_select_index, len(sessions) - 1))
+    session_id = sessions[idx]
+    doc = read_json_file(session_json_path(session_id), {})
+    has_drawing = detect_session_has_drawing(session_id, doc)
+    star = "*" if has_drawing else ""
+
+    display.show([
+        "ELEGIR SESION",
+        f"Sesion {idx + 1:02d}/{len(sessions):02d}",
+        f"ID: {session_id}{star}",
+        f"Fotos: {int(doc.get('photo_count', 0) or 0):02d}",
+        f"Amb:   {int(doc.get('environment_count', 0) or 0):02d}",
+        f"Dib: {'OK' if has_drawing else '--'}",
+        "Sel: activar",
+        "Back: menu",
     ])
 
 
@@ -455,10 +774,11 @@ def show_screen_message(title: str, message: str) -> None:
     display.show([
         title[:21],
         message[:21],
+        f"Ses:{session_label()}",
         f"Paso:{short_step(state.current_step)[:16]}",
         f"Modo:{short_state(state.current_state)[:16]}",
         f"Prog:{state.progress}%",
-        f"F:{okmark(state.photo_done)} A:{okmark(state.environment_done)}",
+        f"F:{state.photo_count:02d} A:{state.environment_count:02d}",
         f"D:{okmark(state.drawing_done)} G:{okmark(state.gcode_done)} E:{okmark(state.executed_done)}",
     ])
 
@@ -485,38 +805,75 @@ def render() -> None:
         show_menu()
     elif current_screen == "status":
         show_status()
-    elif current_screen == "about":
-        show_about()
+    elif current_screen == "session_select":
+        show_session_select()
     elif current_screen == "screen-test":
         show_screen_test()
     else:
         show_menu()
 
 
-def send_command(command: str, label: str) -> None:
+def send_command(command: str, label: str, extra: Optional[dict] = None) -> None:
     if udp is None:
         return
 
-    udp.send({
+    payload = {
         "type": "command",
         "command": command,
         "label": label,
-    })
+        "session_id": state.active_session,
+        "active_session": state.active_session,
+        "session_has_drawing": state.session_has_drawing,
+    }
+    if extra:
+        payload.update(extra)
+
+    udp.send(payload)
 
 
 def select_current_item() -> None:
-    global current_screen
+    global current_screen, session_select_index
     label, command = MENU_ITEMS[menu_index]
 
     if command == "show_status":
+        refresh_session_state()
         current_screen = "status"
         show_status()
         send_command(command, label)
         return
 
-    if command == "show_about":
-        current_screen = "about"
-        show_about()
+    if command == "new_session":
+        new_id = create_new_session()
+        if new_id is None:
+            state.last_message = "No hay sesiones libres"
+            state.current_step = "new_session"
+            state.current_state = "error"
+            state.last_update = now_iso()
+            current_screen = "status"
+            show_no_sessions_available()
+            return
+
+        state.current_step = "new_session"
+        state.current_state = "done"
+        state.last_message = f"Sesion {new_id} activa"
+        state.progress = 0
+        state.last_update = now_iso()
+        current_screen = "session_created"
+        show_session_created(new_id)
+        send_command("new_session", "Nueva sesion", {"session_id": new_id, "active_session": new_id})
+        return
+
+    if command == "select_session":
+        sessions = scan_sessions()
+        if not sessions:
+            ensure_session("S01")
+            sessions = ["S01"]
+        if state.active_session in sessions:
+            session_select_index = sessions.index(state.active_session)
+        else:
+            session_select_index = 0
+        current_screen = "session_select"
+        show_session_select()
         return
 
     state.current_step = command
@@ -525,7 +882,7 @@ def select_current_item() -> None:
     state.last_update = now_iso()
 
     current_screen = "action"
-    show_action(label, "Enviado a Node-RED")
+    show_action(label, f"Sesion {session_label()}")
     send_command(command, label)
 
 
@@ -534,7 +891,61 @@ def update_state_from_udp(payload: dict) -> None:
 
     msg_type = payload.get("type", "status")
 
+    # Compatibilidad extra:
+    # Si por error o por diseño llega directo un mensaje del ESP32 ambiental
+    # con type="environment", lo convertimos a estado OLED.
+    # Así la OLED no depende de que Node-RED lo traduzca perfecto.
+    if msg_type == "environment":
+        env_state = str(payload.get("state", "running"))
+        stage = str(payload.get("stage", ""))
+        message = str(payload.get("message", "Ambiente"))
+        progress = payload.get("progress", 40)
+
+        has_all_values = (
+            payload.get("aht_ok") is True
+            and payload.get("ens_ok") is True
+            and payload.get("temperature") is not None
+            and payload.get("humidity") is not None
+            and payload.get("aqi") is not None
+            and payload.get("tvoc") is not None
+            and payload.get("eco2") is not None
+        )
+
+        mapped = {
+            "type": "status",
+            "step": "environment",
+            "state": env_state,
+            "message": message,
+            "progress": progress,
+        }
+
+        if stage == "complete":
+            if env_state == "done" and has_all_values:
+                mapped.update({
+                    "type": "framework_state",
+                    "environment": True,
+                    "environment_done": True,
+                    "state": "done",
+                    "message": "Ambiente listo",
+                    "progress": progress,
+                })
+            else:
+                mapped.update({
+                    "environment": False,
+                    "environment_done": False,
+                    "state": "error",
+                    "message": message or "Lectura incompleta",
+                })
+
+        payload = mapped
+        msg_type = payload.get("type", "status")
+
     if msg_type in ("status", "framework_state", "progress"):
+        if "session_id" in payload or "active_session" in payload:
+            incoming_session = str(payload.get("session_id", payload.get("active_session", state.active_session)))
+            if valid_session_id(incoming_session):
+                refresh_session_state(incoming_session)
+
         if "photo_done" in payload:
             state.photo_done = bool(payload["photo_done"])
         if "environment_done" in payload:
@@ -546,6 +957,17 @@ def update_state_from_udp(payload: dict) -> None:
         if "executed_done" in payload:
             state.executed_done = bool(payload["executed_done"])
 
+        if "photo_count" in payload:
+            try:
+                state.photo_count = max(0, int(payload["photo_count"]))
+            except Exception:
+                pass
+        if "environment_count" in payload:
+            try:
+                state.environment_count = max(0, int(payload["environment_count"]))
+            except Exception:
+                pass
+
         # Alias cortos para que Node-RED pueda mandar mensajes más cómodos.
         if "photo" in payload:
             state.photo_done = bool(payload["photo"])
@@ -553,6 +975,10 @@ def update_state_from_udp(payload: dict) -> None:
             state.environment_done = bool(payload["environment"])
         if "drawing" in payload:
             state.drawing_done = bool(payload["drawing"])
+        if state.drawing_done:
+            state.session_has_drawing = True
+        if "session_has_drawing" in payload:
+            state.session_has_drawing = bool(payload["session_has_drawing"])
         if "gcode" in payload:
             state.gcode_done = bool(payload["gcode"])
         if "executed" in payload:
@@ -571,6 +997,7 @@ def update_state_from_udp(payload: dict) -> None:
                 pass
 
         state.last_update = now_iso()
+        update_active_session_doc()
 
         # Si Node-RED avisa algo, mostrar estado inmediatamente.
         current_screen = "status"
@@ -599,35 +1026,76 @@ def update_state_from_udp(payload: dict) -> None:
         show_status()
 
 
+def activate_selected_session() -> None:
+    global current_screen
+    sessions = scan_sessions()
+    if not sessions:
+        ensure_session("S01")
+        sessions = ["S01"]
+    idx = max(0, min(session_select_index, len(sessions) - 1))
+    session_id = select_session_by_index(idx)
+    if session_id is None:
+        return
+
+    state.current_step = "select_session"
+    state.current_state = "done"
+    state.last_message = f"Sesion {session_id} activa"
+    state.last_update = now_iso()
+    current_screen = "status"
+    show_status()
+    send_command("select_session", "Seleccionar sesion", {"session_id": session_id, "active_session": session_id})
+
+
 def handle_event(event: str) -> None:
-    global menu_index, current_screen
+    global menu_index, current_screen, session_select_index
 
     if event == "up":
+        if current_screen == "session_select":
+            sessions = scan_sessions()
+            if sessions:
+                session_select_index = (session_select_index - 1) % len(sessions)
+            show_session_select()
+            return
+
         if current_screen != "menu":
             current_screen = "menu"
         else:
             menu_index = (menu_index - 1) % len(MENU_ITEMS)
         render()
+
     elif event == "down":
+        if current_screen == "session_select":
+            sessions = scan_sessions()
+            if sessions:
+                session_select_index = (session_select_index + 1) % len(sessions)
+            show_session_select()
+            return
+
         if current_screen != "menu":
             current_screen = "menu"
         else:
             menu_index = (menu_index + 1) % len(MENU_ITEMS)
         render()
+
     elif event == "select":
         if current_screen == "splash":
             current_screen = "menu"
             render()
         elif current_screen == "menu":
             select_current_item()
+        elif current_screen == "session_select":
+            activate_selected_session()
         else:
             current_screen = "menu"
             render()
+
     elif event == "back":
         if current_screen != "splash":
             current_screen = "menu"
             render()
+
     elif event == "status":
+        refresh_session_state()
         current_screen = "status"
         show_status()
         send_command("show_status", "Estado")
@@ -669,6 +1137,11 @@ def parse_args():
     parser.add_argument("--segment-remap", default=0xA1, type=lambda x: int(x, 0))
     parser.add_argument("--com-scan", default=0xC8, type=lambda x: int(x, 0))
     parser.add_argument("--screen-test", action="store_true")
+    parser.add_argument(
+        "--data-root",
+        default=str(Path.home() / "Documents" / "GitHub" / "contraespacios" / "data"),
+        help="Carpeta base para state.json y sessions/",
+    )
 
     parser.add_argument("--udp-send-host", default="127.0.0.1")
     parser.add_argument("--udp-send-port", default=5005, type=int)
@@ -682,6 +1155,8 @@ def main() -> None:
     global current_screen, display, udp
     args = parse_args()
     address = int(args.address, 16) if isinstance(args.address, str) else args.address
+
+    init_sessions(Path(args.data_root))
 
     display = Display(
         address=address,
@@ -713,6 +1188,10 @@ def main() -> None:
         "type": "hello",
         "message": "OLED interface online",
         "listen_port": args.udp_listen_port,
+        "active_session": state.active_session,
+        "session_id": state.active_session,
+        "session_has_drawing": state.session_has_drawing,
+        "data_root": str(DATA_ROOT),
     })
 
     if args.screen_test:
@@ -733,9 +1212,9 @@ def main() -> None:
             elif kind == "udp":
                 update_state_from_udp(payload)
             elif kind == "udp_error":
-                state.last_message = str(payload)
-                current_screen = "status"
-                show_status()
+                # Los UDP inválidos ya se imprimen en terminal.
+                # No se muestran en OLED para no tapar el estado/progreso.
+                print(str(payload))
         except queue.Empty:
             pass
 
