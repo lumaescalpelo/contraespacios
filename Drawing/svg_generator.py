@@ -61,23 +61,26 @@ def _partial_landscape_bands(image_analysis, visual, config):
     density = float(visual.get('band_density', 0.9))
     amp_factor = float(visual.get('band_amplitude_factor', 1.0))
 
-    num_bands = max(4, int(round(float(config.landscape_bands) * density)))
+    # Escalado más suave: valores grandes siguen siendo utilizables.
+    requested = max(1.0, float(config.landscape_bands))
+    num_bands = max(3, int(round(1.0 + (requested - 1.0) * density * 0.55)))
+    num_bands = min(num_bands, 8)
     samples = int(config.band_samples)
     thresh = float(config.band_dark_threshold)
-    amp_mm = float(config.band_amplitude_mm) * amp_factor
+    amp_mm = float(config.band_amplitude_mm) * (0.88 + 0.12 * amp_factor)
 
     film_w = float(config.film_width_mm)
     film_h = float(config.film_height_mm)
     margin = float(config.margin_mm)
     draw_w = film_w - margin * 2
     draw_h = film_h - margin * 2
-    min_seg_len = max(2, int(round(samples * float(config.band_min_length_ratio))))
+    min_seg_len = max(3, int(round(samples * float(config.band_min_length_ratio))))
 
     paths = []
     band_meta = {"bands_used": num_bands, "band_segments": 0, "band_amplitude_mm": round(amp_mm, 4)}
 
-    # Evitar top y bottom extremos, concentrar paisaje en la franja media.
-    base_ys = np.linspace(0.18, 0.82, num_bands)
+    # Más concentrado al centro para una lectura tipo paisaje.
+    base_ys = np.linspace(0.24, 0.76, num_bands)
 
     for bi, y_norm in enumerate(base_ys):
         y_idx = int(round(y_norm * (h - 1)))
@@ -85,7 +88,6 @@ def _partial_landscape_bands(image_analysis, visual, config):
         darkness = []
         for x in xs:
             xi = int(round(x))
-            # Promedio vertical local.
             y0 = max(0, y_idx - 2)
             y1 = min(h, y_idx + 3)
             v = 1.0 - float(np.mean(gray[y0:y1, xi]))
@@ -100,10 +102,8 @@ def _partial_landscape_bands(image_analysis, visual, config):
             xn = float(x) / max(1.0, w - 1)
             x_mm = margin + xn * draw_w
             base_y_mm = margin + y_norm * draw_h
-            # desplazamiento menor y suave.
             offset = (darkness[j] - thresh) / max(1e-5, (1.0 - thresh))
             offset = clamp(offset, 0.0, 1.0)
-            # alternar ligeramente el sentido para que parezcan estratos.
             direction = -1.0 if bi % 2 == 0 else 1.0
             y_mm = base_y_mm + direction * offset * amp_mm
             y_mm = clamp(y_mm, margin, film_h - margin)
@@ -137,12 +137,14 @@ def _internal_feature_lines(image_analysis, visual, config):
     draw_w = film_w - margin * 2
     draw_h = film_h - margin * 2
 
-    num_lines = max(2, int(round(float(config.internal_lines) * float(visual.get('internal_weight', 0.8)))))
+    requested = max(1.0, float(config.internal_lines))
+    num_lines = max(1, int(round(1.0 + (requested - 1.0) * float(visual.get('internal_weight', 0.8)) * 0.50)))
+    num_lines = min(num_lines, 5)
     samples = int(config.internal_samples)
     thresh = float(config.internal_dark_threshold)
     amp_mm = float(config.internal_amplitude_mm)
 
-    y_positions = np.linspace(0.28, 0.72, num_lines)
+    y_positions = np.linspace(0.32, 0.68, num_lines)
     paths = []
     for li, y_norm in enumerate(y_positions):
         y_idx = int(round(y_norm * (h - 1)))
@@ -150,23 +152,21 @@ def _internal_feature_lines(image_analysis, visual, config):
         pts = []
         for x in xs:
             xi = int(round(x))
-            window = gray[max(0, y_idx-6):min(h, y_idx+7), xi]
+            window = gray[max(0, y_idx-5):min(h, y_idx+6), xi]
             dark = 1.0 - window
             best_k = int(np.argmax(dark))
             best_dark = float(np.max(dark))
             if best_dark < thresh:
                 continue
-            local_y = max(0, y_idx-6) + best_k
+            local_y = max(0, y_idx-5) + best_k
             xn = float(x) / max(1.0, w - 1)
-            # suavizar hacia una línea media, no seguimiento exacto.
-            yn = (0.7 * (float(local_y) / max(1.0, h - 1))) + (0.3 * y_norm)
+            yn = (0.75 * (float(local_y) / max(1.0, h - 1))) + (0.25 * y_norm)
             x_mm = margin + xn * draw_w
             y_mm = margin + yn * draw_h
-            # pequeña modulación local.
             y_mm += (best_dark - thresh) * amp_mm * (1 if li % 2 else -1)
             y_mm = clamp(y_mm, margin, film_h - margin)
             pts.append((x_mm, y_mm))
-        if len(pts) >= max(8, samples // 5):
+        if len(pts) >= max(10, samples // 4):
             if li % 2 == 1:
                 pts.reverse()
             paths.append(pts)
@@ -177,8 +177,16 @@ def _contours_to_paths(contours, visual, config):
     film_w = float(config.film_width_mm)
     film_h = float(config.film_height_mm)
     margin = float(config.margin_mm)
-    keep = max(3, int(round(len(contours) * float(visual.get('contour_weight', 0.8)))))
+
+    # Escalado suave: aunque haya muchos contornos disponibles, no satura la escena.
+    available = len(contours)
+    requested = max(1, int(config.max_contours))
+    base_keep = min(available, requested)
+    weight = float(visual.get('contour_weight', 0.8))
+    keep = max(1, int(round(1 + max(0, base_keep - 1) * weight * 0.45)))
+    keep = min(keep, available)
     selected = contours[:keep]
+
     paths = []
     for c in selected:
         pts = []
@@ -203,7 +211,7 @@ def build_drawing_paths(image_analysis, visual, config):
         **internal_meta,
         **contour_meta,
         "continuous_path": True,
-        "style": "landscape_topographic",
+        "style": "landscape_legible",
     }
     return ordered, meta
 

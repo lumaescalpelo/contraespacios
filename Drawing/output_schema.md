@@ -32,3 +32,6 @@ Incluye:
 - análisis de imagen;
 - datos de bandas, contornos y líneas internas.
 
+
+
+> Esta versión usa el estilo `landscape_legible` y una compresión suave de parámetros.

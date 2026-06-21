@@ -10,6 +10,7 @@ from drawing_config import DrawingConfig, DEFAULT_CONFIG
 from environment_analysis import analyze_environment
 from image_analysis import analyze_photos
 from preview_generator import write_preview
+from process_steps import save_process_steps
 from session_loader import load_session
 from svg_generator import build_drawing_paths, write_svg
 from utils import load_json, now_iso, save_json
@@ -85,6 +86,7 @@ def run(args):
 
     svg_info = write_svg(svg_path, paths, config)
     preview_info = write_preview(preview_path, paths, config)
+    process_info = save_process_steps(session, image_analysis, env_stats, visual, config, output_dir)
     duration = round(time.time() - t0, 3)
     finished = now_iso()
 
@@ -121,7 +123,10 @@ def run(args):
             "preview": str(preview_path),
             "metadata": str(metadata_path),
             "generation_log": str(log_path),
-        }
+            "process_steps_dir": process_info["steps_dir"],
+            "process_manifest": process_info["manifest"],
+        },
+        "process_steps": process_info,
     }
 
     save_json(metadata_path, metadata)
@@ -152,7 +157,7 @@ def run(args):
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Genera SVG v3 landscape para Contra Espacios.")
+    p = argparse.ArgumentParser(description="Genera SVG v4 landscape legible para Contra Espacios.")
     p.add_argument("--session", required=True)
     p.add_argument("--data-root", default="/home/pi/data")
     p.add_argument("--film-width-mm", type=float, default=43.0)
@@ -162,19 +167,19 @@ def parse_args():
     p.add_argument("--image-process-height-px", type=int, default=420)
     p.add_argument("--quantization_levels", type=int, default=5)
     p.add_argument("--blur-size", type=int, default=7)
-    p.add_argument("--max-contours", type=int, default=14)
-    p.add_argument("--max-points-per-contour", type=int, default=120)
-    p.add_argument("--contour-simplify-ratio", type=float, default=0.010)
+    p.add_argument("--max-contours", type=int, default=8)
+    p.add_argument("--max-points-per-contour", type=int, default=100)
+    p.add_argument("--contour-simplify-ratio", type=float, default=0.012)
     p.add_argument("--min-contour-area-ratio", type=float, default=0.0025)
-    p.add_argument("--landscape-bands", type=int, default=7)
+    p.add_argument("--landscape-bands", type=int, default=5)
     p.add_argument("--band-samples", type=int, default=90)
-    p.add_argument("--band-dark-threshold", type=float, default=0.50)
-    p.add_argument("--band-amplitude-mm", type=float, default=0.90)
+    p.add_argument("--band-dark-threshold", type=float, default=0.55)
+    p.add_argument("--band-amplitude-mm", type=float, default=0.75)
     p.add_argument("--band-min-length-ratio", type=float, default=0.08)
-    p.add_argument("--internal-lines", type=int, default=4)
+    p.add_argument("--internal-lines", type=int, default=3)
     p.add_argument("--internal-samples", type=int, default=80)
-    p.add_argument("--internal-dark-threshold", type=float, default=0.40)
-    p.add_argument("--internal-amplitude-mm", type=float, default=0.55)
+    p.add_argument("--internal-dark-threshold", type=float, default=0.46)
+    p.add_argument("--internal-amplitude-mm", type=float, default=0.42)
     p.add_argument("--preview-height-px", type=int, default=700)
     return p.parse_args()
 
