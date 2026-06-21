@@ -1,6 +1,4 @@
-"""
-Utilidades generales para Drawing.
-"""
+"""Utilidades generales para Drawing."""
 
 import json
 import math
@@ -57,25 +55,16 @@ def save_json(path, data):
 
 def natural_sort_key(path_or_string):
     text = str(path_or_string)
-    return [
-        int(part) if part.isdigit() else part.lower()
-        for part in re.split(r"(\d+)", text)
-    ]
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text)]
 
 
 def is_probably_jpeg(path, min_size=2048):
     path = Path(path)
     try:
-        if not path.is_file():
-            return False
-        if path.stat().st_size < min_size:
+        if not path.is_file() or path.stat().st_size < min_size:
             return False
         with path.open("rb") as f:
             header = f.read(3)
         return header[:3] == b"\xff\xd8\xff"
     except Exception:
         return False
-
-
-def compact_path(path):
-    return str(Path(path).expanduser())

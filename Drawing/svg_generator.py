@@ -1,215 +1,182 @@
-"""
-Generación SVG.
+"""Generación SVG v2: raster serpentino + contornos."""
 
-Se genera un trazo continuo para anticipar que la máquina no tendrá eje Z.
-Los saltos entre contornos son líneas reales de conexión.
-"""
-
-import math
 from pathlib import Path
 
 import svgwrite
+import numpy as np
 
 from utils import clamp, ensure_dir
 
 
-def _map_point_to_mm(point, film_w, film_h, margin):
-    x, y = point
+def _map_norm_to_mm(xn, yn, film_w, film_h, margin):
     draw_w = max(0.1, film_w - margin * 2)
     draw_h = max(0.1, film_h - margin * 2)
-    return (
-        margin + clamp(x, 0, 1) * draw_w,
-        margin + clamp(y, 0, 1) * draw_h
-    )
-
-
-def _warp_point(x, y, visual, film_w, film_h):
-    noise = float(visual.get("noise_mm", 0.08))
-    freq = float(visual.get("wave_frequency", 2.0))
-    phase = float(visual.get("phase", 0.0))
-
-    nx = math.sin((y / max(0.1, film_h)) * math.tau * freq + phase) * noise
-    ny = math.sin((x / max(0.1, film_w)) * math.tau * (freq * 0.67) + phase * 1.7) * noise * 0.45
-
-    return (
-        clamp(x + nx, 0, film_w),
-        clamp(y + ny, 0, film_h)
-    )
-
-
-def _generate_atmosphere_path(visual, film_w, film_h, margin):
-    lines = int(visual.get("atmosphere_lines", 10))
-    lines = max(4, min(24, lines))
-
-    amp = float(visual.get("noise_mm", 0.12)) * 2.0
-    freq = float(visual.get("wave_frequency", 2.0))
-    phase = float(visual.get("phase", 0.0))
-
-    left = margin
-    right = film_w - margin
-    top = margin
-    bottom = film_h - margin
-
-    points = []
-    samples = 32
-
-    for i in range(lines):
-        t = i / max(1, lines - 1)
-        y_base = top + t * (bottom - top)
-
-        row = []
-        for s in range(samples):
-            u = s / max(1, samples - 1)
-
-            if i % 2 == 0:
-                x = left + u * (right - left)
-            else:
-                x = right - u * (right - left)
-
-            y = y_base + math.sin(u * math.tau * freq + phase + i * 0.35) * amp
-            row.append((clamp(x, left, right), clamp(y, top, bottom)))
-
-        points.extend(row)
-
-    return points
+    return margin + xn * draw_w, margin + yn * draw_h
 
 
 def _nearest_order(paths):
     if not paths:
         return []
-
-    remaining = [list(path) for path in paths if len(path) > 1]
+    remaining = [list(p) for p in paths if len(p) > 1]
     ordered = [remaining.pop(0)]
-
     while remaining:
         last = ordered[-1][-1]
-
-        best_index = 0
-        best_reverse = False
-        best_dist = None
-
+        best_i = 0
+        best_rev = False
+        best_d = None
         for i, path in enumerate(remaining):
-            d_start = (path[0][0] - last[0]) ** 2 + (path[0][1] - last[1]) ** 2
-            d_end = (path[-1][0] - last[0]) ** 2 + (path[-1][1] - last[1]) ** 2
-
-            if best_dist is None or d_start < best_dist:
-                best_dist = d_start
-                best_index = i
-                best_reverse = False
-
-            if d_end < best_dist:
-                best_dist = d_end
-                best_index = i
-                best_reverse = True
-
-        chosen = remaining.pop(best_index)
-        if best_reverse:
+            d0 = (path[0][0] - last[0]) ** 2 + (path[0][1] - last[1]) ** 2
+            d1 = (path[-1][0] - last[0]) ** 2 + (path[-1][1] - last[1]) ** 2
+            if best_d is None or d0 < best_d:
+                best_d = d0
+                best_i = i
+                best_rev = False
+            if d1 < best_d:
+                best_d = d1
+                best_i = i
+                best_rev = True
+        chosen = remaining.pop(best_i)
+        if best_rev:
             chosen = list(reversed(chosen))
-
         ordered.append(chosen)
-
     return ordered
 
 
-def build_drawing_paths(image_paths_norm, visual, config):
+def _sample_row(arr, y_idx, sample_count):
+    h, w = arr.shape[:2]
+    xs = np.linspace(0, w - 1, sample_count)
+    row = []
+    y = int(np.clip(y_idx, 0, h - 1))
+    for x in xs:
+        xi = int(np.clip(round(float(x)), 0, w - 1))
+        row.append(float(arr[y, xi]))
+    return xs, np.array(row, dtype=np.float32)
+
+
+def _build_scanline_path(gray, edges, visual, config):
+    h, w = gray.shape[:2]
     film_w = float(config.film_width_mm)
     film_h = float(config.film_height_mm)
     margin = float(config.margin_mm)
+    draw_w = film_w - margin * 2
+    draw_h = film_h - margin * 2
 
-    density = float(visual.get("density", 0.55))
-    max_paths = int(config.max_paths)
-    keep_count = max(1, min(max_paths, int(round(max_paths * density))))
+    density = float(visual.get("density", 0.85))
+    scan_factor = float(visual.get("scanline_factor", 1.0))
+    amp_factor = float(visual.get("scan_amplitude_factor", 1.0))
+    edge_weight = float(visual.get("edge_weight", 0.95))
+    tone_gamma = float(visual.get("tone_gamma", 0.95))
 
-    selected = image_paths_norm[:keep_count]
+    scanlines = int(round(config.base_scanlines * density * scan_factor))
+    scanlines = max(26, min(int(config.max_scanlines), scanlines))
+    samples = max(60, int(config.samples_per_scanline))
+    amp_mm = clamp(config.base_amplitude_mm * amp_factor, config.base_amplitude_mm * 0.8, config.max_amplitude_mm)
 
-    mm_paths = []
+    # Normalizaciones.
+    gray_n = gray.astype(np.float32) / 255.0
+    edges_n = edges.astype(np.float32) / 255.0
 
-    atmosphere = _generate_atmosphere_path(visual, film_w, film_h, margin)
-    mm_paths.append(atmosphere)
+    points = []
+    ys = np.linspace(0, h - 1, scanlines)
 
-    for path in selected:
-        mapped = []
-        for point in path:
-            x, y = _map_point_to_mm(point, film_w, film_h, margin)
-            x, y = _warp_point(x, y, visual, film_w, film_h)
-            mapped.append((x, y))
+    for i, y_img in enumerate(ys):
+        base_y_mm = margin + (i / max(1, scanlines - 1)) * draw_h
+        xs_img, row_g = _sample_row(gray_n, y_img, samples)
+        _, row_e = _sample_row(edges_n, y_img, samples)
 
-        if len(mapped) >= config.min_points_per_path:
-            mm_paths.append(mapped)
+        darkness = 1.0 - row_g
+        darkness = np.power(np.clip(darkness, 0.0, 1.0), tone_gamma)
+        emphasis = np.clip(darkness * config.tonal_gain + row_e * config.edge_gain * edge_weight, 0.0, 1.4)
 
-    mm_paths = _nearest_order(mm_paths)
+        row_points = []
+        for j, x_img in enumerate(xs_img):
+            xn = float(x_img) / max(1.0, w - 1)
+            x_mm = margin + xn * draw_w
 
-    return mm_paths
+            # Desplazamiento vertical proporcional al tono + borde.
+            offset = emphasis[j] * amp_mm
+            y_mm = base_y_mm + offset
+            y_mm = clamp(y_mm, margin, film_h - margin)
+            row_points.append((x_mm, y_mm))
+
+        if i % 2 == 1:
+            row_points.reverse()
+
+        points.extend(row_points)
+
+    return points, {
+        "scanlines_used": scanlines,
+        "samples_per_scanline": samples,
+        "scanline_amplitude_mm": round(amp_mm, 4),
+    }
+
+
+def _build_contour_paths(contours, visual, config):
+    film_w = float(config.film_width_mm)
+    film_h = float(config.film_height_mm)
+    margin = float(config.margin_mm)
+    keep_ratio = float(visual.get("contour_weight", 0.75))
+    keep_count = max(0, int(round(len(contours) * keep_ratio)))
+    selected = contours[:keep_count]
+    paths = []
+    for contour in selected:
+        path = []
+        for xn, yn in contour:
+            x_mm, y_mm = _map_norm_to_mm(xn, yn, film_w, film_h, margin)
+            path.append((x_mm, y_mm))
+        if len(path) >= config.min_points_per_contour:
+            paths.append(path)
+    return _nearest_order(paths), {"contours_selected": len(paths)}
+
+
+def build_drawing_paths(image_analysis, visual, config):
+    gray = image_analysis["gray"]
+    edges = image_analysis["edges"]
+    contours = image_analysis["contours"]
+
+    scanline_points, scan_meta = _build_scanline_path(gray, edges, visual, config)
+    contour_paths, contour_meta = _build_contour_paths(contours, visual, config)
+
+    # Un solo recorrido continuo: primero raster, luego contornos relevantes.
+    paths = [scanline_points] + contour_paths
+    meta = {}
+    meta.update(scan_meta)
+    meta.update(contour_meta)
+    meta["continuous_path"] = True
+    return paths, meta
 
 
 def flatten_paths(paths):
-    result = []
-    for path in paths:
-        for point in path:
-            result.append(point)
-    return result
+    out = []
+    for p in paths:
+        out.extend(p)
+    return out
 
 
 def make_svg_path_data(paths):
-    points = flatten_paths(paths)
-    if not points:
+    pts = flatten_paths(paths)
+    if not pts:
         return ""
-
-    commands = []
-    first = points[0]
-    commands.append(f"M {first[0]:.4f} {first[1]:.4f}")
-
-    for x, y in points[1:]:
+    commands = [f"M {pts[0][0]:.4f} {pts[0][1]:.4f}"]
+    for x, y in pts[1:]:
         commands.append(f"L {x:.4f} {y:.4f}")
-
     return " ".join(commands)
 
 
-def write_svg(output_path, paths, config, metadata=None):
+def write_svg(output_path, paths, config):
     output_path = Path(output_path)
     ensure_dir(output_path.parent)
-
     film_w = float(config.film_width_mm)
     film_h = float(config.film_height_mm)
-
     d = make_svg_path_data(paths)
-
-    dwg = svgwrite.Drawing(
-        str(output_path),
-        size=(f"{film_w}mm", f"{film_h}mm"),
-        viewBox=f"0 0 {film_w} {film_h}",
-        profile="tiny"
-    )
-
-    dwg.add(dwg.rect(
-        insert=(0, 0),
-        size=(film_w, film_h),
-        fill="white"
-    ))
-
-    dwg.add(dwg.rect(
-        insert=(0, 0),
-        size=(film_w, film_h),
-        fill="none",
-        stroke="black",
-        stroke_width=0.03,
-        opacity=0.25
-    ))
-
-    dwg.add(dwg.path(
-        d=d,
-        fill="none",
-        stroke="black",
-        stroke_width=float(getattr(config, "stroke_width_mm", 0.1)),
-        stroke_linecap="round",
-        stroke_linejoin="round"
-    ))
-
+    dwg = svgwrite.Drawing(str(output_path), size=(f"{film_w}mm", f"{film_h}mm"), viewBox=f"0 0 {film_w} {film_h}", profile="tiny")
+    dwg.add(dwg.rect(insert=(0, 0), size=(film_w, film_h), fill="white"))
+    dwg.add(dwg.path(d=d, fill="none", stroke="black", stroke_width=float(getattr(config, "stroke_width_mm", 0.1)), stroke_linecap="round", stroke_linejoin="round"))
     dwg.save()
-
+    pts = flatten_paths(paths)
     return {
         "svg_path": str(output_path),
-        "path_points": len(flatten_paths(paths)),
-        "path_segments": max(0, len(flatten_paths(paths)) - 1),
+        "path_points": len(pts),
+        "path_segments": max(0, len(pts) - 1),
         "continuous_path": True,
     }
