@@ -8,9 +8,8 @@
 // =====================================================
 // Contra Espacios - ContraEnv
 // ESP32 WROOM / DevKit V1 + ENS160 + AHT2x
-// UDP + mDNS + respuesta unica final
+// UDP + mDNS + progreso OLED via Node-RED
 // ENS160 en deep sleep por I2C entre lecturas
-// LED de estado integrado
 // =====================================================
 
 // -------------------- Identidad --------------------
@@ -22,8 +21,8 @@ const char* WIFI_SSID = "contraespacios";
 const char* WIFI_PASS = "cinemabarredura";
 
 // -------------------- LED integrado --------------------
-// En muchos ESP32 DevKit V1 el LED integrado está en GPIO2.
-// Si tu placa usa otro LED, cambia este pin.
+// En muchos ESP32 DevKit V1 es GPIO2.
+// Si no ves parpadeo, tu placa puede no tener LED ahí o ser activo en LOW.
 #define LED_PIN 2
 #define LED_ON HIGH
 #define LED_OFF LOW
@@ -33,19 +32,13 @@ const int I2C_SDA = 21;
 const int I2C_SCL = 22;
 
 // -------------------- UDP --------------------
-// ESP32 escucha comandos de Node-RED aquí:
-const uint16_t ESP32_UDP_PORT = 4210;
-
-// Node-RED escucha la respuesta final aquí:
-const uint16_t NODE_RED_UDP_PORT = 5010;
+const uint16_t ESP32_UDP_PORT = 4210;     // ESP32 escucha comandos
+const uint16_t NODE_RED_UDP_PORT = 5010;  // Node-RED escucha respuestas
 
 // -------------------- Tiempos --------------------
 const unsigned long AHT_SETTLE_MS = 1200;
-
-// Warmup ENS160 antes de leer gases.
-// Para pruebas rápidas puedes bajar a 10000.
-// Para más estabilidad puedes subir a 30000 o 60000.
 const unsigned long ENS_WARMUP_MS = 20000;
+const unsigned long ENS_PROGRESS_INTERVAL_MS = 5000;
 
 const int AHT_DISCARD_READINGS = 2;
 const int AHT_AVG_READINGS = 5;
@@ -92,7 +85,13 @@ unsigned long lastWifiCheck = 0;
 unsigned long wifiLostSince = 0;
 
 // =====================================================
-// Estructura de lectura
+// Prototipos
+// =====================================================
+
+void checkWiFiOrRestart();
+
+// =====================================================
+// Estructura lectura
 // =====================================================
 
 struct EnvReading {
@@ -112,7 +111,7 @@ struct EnvReading {
 };
 
 // =====================================================
-// LED helpers
+// LED
 // =====================================================
 
 void ledOn() {
@@ -143,7 +142,7 @@ void blinkFastTimes(int times) {
   }
 }
 
-void delayWithFastBlink(unsigned long durationMs) {
+void delayFastBlink(unsigned long durationMs) {
   unsigned long start = millis();
 
   while (millis() - start < durationMs) {
@@ -154,6 +153,7 @@ void delayWithFastBlink(unsigned long durationMs) {
 
 void solidOnFor(unsigned long durationMs) {
   ledOn();
+
   unsigned long start = millis();
 
   while (millis() - start < durationMs) {
@@ -245,7 +245,7 @@ void i2cScan() {
 }
 
 // =====================================================
-// ENS160 control directo
+// ENS160
 // =====================================================
 
 bool ensSetMode(uint8_t mode) {
@@ -347,13 +347,6 @@ bool ensSetCompensation(float temperatureC, float humidityRH) {
   bool okT = i2cWrite16LE(ensAddress, ENS160_REG_TEMP_IN, tempRaw);
   bool okH = i2cWrite16LE(ensAddress, ENS160_REG_RH_IN, rhRaw);
 
-  Serial.print("ENS160 compensacion T=");
-  Serial.print(temperatureC);
-  Serial.print(" RH=");
-  Serial.print(humidityRH);
-  Serial.print(okT && okH ? " OK" : " ERROR");
-  Serial.println();
-
   return okT && okH;
 }
 
@@ -410,7 +403,7 @@ bool readAHTAverage(float& temperature, float& humidity) {
 
   for (int i = 0; i < AHT_DISCARD_READINGS; i++) {
     readAHTOnce(t, rh);
-    delayWithFastBlink(250);
+    delayFastBlink(250);
   }
 
   float sumT = 0;
@@ -424,7 +417,7 @@ bool readAHTAverage(float& temperature, float& humidity) {
       valid++;
     }
 
-    delayWithFastBlink(250);
+    delayFastBlink(250);
   }
 
   if (valid == 0) return false;
@@ -453,7 +446,6 @@ void connectWiFi() {
 
   while (WiFi.status() != WL_CONNECTED) {
     blinkSlowOnce();
-
     Serial.print(".");
 
     if (millis() - start > WIFI_LOST_RESTART_MS) {
@@ -470,7 +462,6 @@ void connectWiFi() {
   Serial.print("Hostname DHCP: ");
   Serial.println(WiFi.getHostname());
 
-  // LED prendido 2 segundos al conectar.
   solidOnFor(2000);
   ledOff();
 
@@ -484,11 +475,6 @@ void startMDNS() {
     Serial.print("mDNS iniciado: ");
     Serial.print(MDNS_NAME);
     Serial.println(".local");
-
-    Serial.print("Servicio UDP: ");
-    Serial.print(MDNS_NAME);
-    Serial.print(".local:");
-    Serial.println(ESP32_UDP_PORT);
   } else {
     Serial.println("ERROR iniciando mDNS");
   }
@@ -535,6 +521,23 @@ void sendJsonTo(IPAddress ip, uint16_t port, StaticJsonDocument<768>& doc) {
   Serial.println(payload);
 }
 
+void sendProgress(IPAddress ip, const char* stage, const char* message, int progress) {
+  StaticJsonDocument<768> doc;
+
+  doc["type"] = "environment";
+  doc["device"] = DEVICE_ID;
+  doc["hostname"] = "contraenv.local";
+  doc["ip"] = WiFi.localIP().toString();
+  doc["listen_port"] = ESP32_UDP_PORT;
+
+  doc["state"] = "running";
+  doc["stage"] = stage;
+  doc["message"] = message;
+  doc["progress"] = progress;
+
+  sendJsonTo(ip, NODE_RED_UDP_PORT, doc);
+}
+
 void sendEnvironmentFinal(IPAddress ip, EnvReading& r) {
   StaticJsonDocument<768> doc;
 
@@ -544,10 +547,12 @@ void sendEnvironmentFinal(IPAddress ip, EnvReading& r) {
   doc["ip"] = WiFi.localIP().toString();
   doc["listen_port"] = ESP32_UDP_PORT;
 
-  doc["state"] = r.ok ? "done" : "error";
+  bool completeOk = r.aht_ok && r.ens_ok;
+
+  doc["state"] = completeOk ? "done" : "error";
   doc["stage"] = "complete";
-  doc["message"] = r.message;
-  doc["progress"] = r.ok ? 50 : 25;
+  doc["message"] = completeOk ? "Ambiente listo" : r.message;
+  doc["progress"] = completeOk ? 50 : 35;
 
   doc["aht_ok"] = r.aht_ok;
   doc["ens_ok"] = r.ens_ok;
@@ -572,34 +577,10 @@ void sendEnvironmentFinal(IPAddress ip, EnvReading& r) {
     doc["eco2"] = nullptr;
   }
 
-  // LED prendido 5 segundos antes de enviar el dato.
   solidOnFor(5000);
-
   sendJsonTo(ip, NODE_RED_UDP_PORT, doc);
-
-  // LED parpadea rápido 10 veces después de enviar.
   blinkFastTimes(10);
   ledOff();
-}
-
-void sendError(IPAddress ip, const char* message) {
-  EnvReading r;
-
-  r.ok = false;
-  r.aht_ok = false;
-  r.ens_ok = false;
-
-  r.temperature = NAN;
-  r.humidity = NAN;
-
-  r.ens_status = 0;
-  r.aqi = 0;
-  r.tvoc = 0;
-  r.eco2 = 0;
-
-  r.message = message;
-
-  sendEnvironmentFinal(ip, r);
 }
 
 // =====================================================
@@ -623,7 +604,7 @@ void initI2CAndSensors() {
 }
 
 // =====================================================
-// Secuencia ambiental con una sola respuesta final
+// Secuencia ambiental
 // =====================================================
 
 void readEnvironmentSequence(IPAddress nodeRedIP) {
@@ -641,19 +622,20 @@ void readEnvironmentSequence(IPAddress nodeRedIP) {
   r.tvoc = 0;
   r.eco2 = 0;
 
-  r.message = "Lectura ambiental";
+  r.message = "Lectura incompleta";
 
   Serial.println("Iniciando lectura ambiental completa...");
 
-  // Desde aquí parpadea rápido porque está leyendo.
-  // 1. Mantener ENS160 dormido antes de leer temperatura/humedad
+  sendProgress(nodeRedIP, "start", "Iniciando ambiente", 30);
+
   if (ensOk) {
     ensDeepSleep();
   }
 
-  delayWithFastBlink(AHT_SETTLE_MS);
+  sendProgress(nodeRedIP, "aht", "Leyendo temperatura", 35);
 
-  // 2. Leer AHT2x primero
+  delayFastBlink(AHT_SETTLE_MS);
+
   float t = NAN;
   float rh = NAN;
 
@@ -663,8 +645,13 @@ void readEnvironmentSequence(IPAddress nodeRedIP) {
     r.aht_ok = true;
   }
 
-  // 3. Activar ENS160 para gases
+  if (!r.aht_ok) {
+    r.message = "Error AHT";
+  }
+
   if (ensOk) {
+    sendProgress(nodeRedIP, "ens_start", "Activando gases", 40);
+
     ensIdle();
 
     if (r.aht_ok) {
@@ -674,11 +661,29 @@ void readEnvironmentSequence(IPAddress nodeRedIP) {
     ensStandard();
 
     unsigned long warmupStart = millis();
+    unsigned long lastProgress = 0;
 
     while (millis() - warmupStart < ENS_WARMUP_MS) {
-      delayWithFastBlink(200);
+      unsigned long elapsed = millis() - warmupStart;
+      unsigned long remaining = (ENS_WARMUP_MS - elapsed) / 1000;
+
+      if (millis() - lastProgress >= ENS_PROGRESS_INTERVAL_MS) {
+        lastProgress = millis();
+
+        int progress = 40 + (int)((elapsed * 8UL) / ENS_WARMUP_MS);
+        if (progress > 48) progress = 48;
+
+        char msg[40];
+        snprintf(msg, sizeof(msg), "Gases %lus", remaining);
+
+        sendProgress(nodeRedIP, "ens_warmup", msg, progress);
+      }
+
+      delayFastBlink(200);
       checkWiFiOrRestart();
     }
+
+    sendProgress(nodeRedIP, "ens_read", "Leyendo gases", 48);
 
     if (r.aht_ok) {
       ensSetCompensation(r.temperature, r.humidity);
@@ -693,7 +698,7 @@ void readEnvironmentSequence(IPAddress nodeRedIP) {
 
     for (int i = 0; i < ENS_FINAL_READINGS; i++) {
       gasReadOk = ensReadGas(status, aqi, tvoc, eco2);
-      delayWithFastBlink(500);
+      delayFastBlink(500);
     }
 
     r.ens_status = status;
@@ -701,27 +706,25 @@ void readEnvironmentSequence(IPAddress nodeRedIP) {
     r.tvoc = tvoc;
     r.eco2 = eco2;
 
-    r.ens_ok = gasReadOk && (r.aqi >= 1 && r.aqi <= 5);
+    // TVOC puede ser 0 y seguir siendo válido.
+    r.ens_ok = gasReadOk && (r.aqi >= 1 && r.aqi <= 5) && (r.eco2 > 0);
+
+    if (!r.ens_ok) {
+      r.message = "ENS no estable";
+    }
 
     ensDeepSleep();
+  } else {
+    r.message = "ENS no detectado";
   }
 
-  // 4. Definir resultado final
   if (r.aht_ok && r.ens_ok) {
     r.ok = true;
     r.message = "Ambiente listo";
-  } else if (r.aht_ok && !r.ens_ok) {
-    r.ok = true;
-    r.message = "AHT listo, ENS no estable";
-  } else if (!r.aht_ok && r.ens_ok) {
-    r.ok = true;
-    r.message = "ENS listo, AHT error";
   } else {
     r.ok = false;
-    r.message = "Error sensores";
   }
 
-  // 5. Enviar UNA sola respuesta final a Node-RED
   sendEnvironmentFinal(nodeRedIP, r);
 
   Serial.println("Lectura ambiental terminada.");
@@ -730,6 +733,26 @@ void readEnvironmentSequence(IPAddress nodeRedIP) {
 // =====================================================
 // UDP receive
 // =====================================================
+
+void sendError(IPAddress ip, const char* message) {
+  EnvReading r;
+
+  r.ok = false;
+  r.aht_ok = false;
+  r.ens_ok = false;
+
+  r.temperature = NAN;
+  r.humidity = NAN;
+
+  r.ens_status = 0;
+  r.aqi = 0;
+  r.tvoc = 0;
+  r.eco2 = 0;
+
+  r.message = message;
+
+  sendEnvironmentFinal(ip, r);
+}
 
 void handleUDPCommand(char* payload, IPAddress senderIP, uint16_t senderPort) {
   Serial.print("UDP <- ");
@@ -756,24 +779,7 @@ void handleUDPCommand(char* payload, IPAddress senderIP, uint16_t senderPort) {
   }
 
   if (strcmp(type, "ping") == 0) {
-    StaticJsonDocument<768> pong;
-
-    pong["type"] = "pong";
-    pong["device"] = DEVICE_ID;
-    pong["hostname"] = "contraenv.local";
-    pong["ip"] = WiFi.localIP().toString();
-    pong["listen_port"] = ESP32_UDP_PORT;
-    pong["state"] = "ready";
-    pong["message"] = "ContraEnv online";
-
-    // LED prendido 5 segundos antes de enviar el pong.
-    solidOnFor(5000);
-
-    sendJsonTo(senderIP, NODE_RED_UDP_PORT, pong);
-
-    blinkFastTimes(10);
-    ledOff();
-
+    sendProgress(senderIP, "pong", "ContraEnv online", 0);
     return;
   }
 
@@ -811,8 +817,7 @@ void setup() {
 
   Serial.println();
   Serial.println("ContraEnv - ESP32 WROOM + ENS160/AHT2x + UDP");
-  Serial.println("Modo: respuesta unica final despues de warmup");
-  Serial.println("LED: lento conectando, rapido leyendo, apagado en espera");
+  Serial.println("Modo: progreso + OK solo si todos los sensores responden");
 
   connectWiFi();
   startMDNS();
@@ -839,7 +844,6 @@ void loop() {
   checkWiFiOrRestart();
   checkUDP();
 
-  // En espera debe estar apagado.
   ledOff();
 
   delay(10);

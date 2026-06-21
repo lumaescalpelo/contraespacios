@@ -371,17 +371,57 @@ def show_menu() -> None:
     display.show(lines)
 
 
+def short_step(step: str) -> str:
+    aliases = {
+        "capture_photo": "foto",
+        "photo": "foto",
+        "capture_environment": "ambiente",
+        "environment": "ambiente",
+        "generate_drawing": "dibujo",
+        "drawing": "dibujo",
+        "gcode": "gcode",
+        "execute_drawing": "ejecutar",
+        "execute": "ejecutar",
+        "done": "terminado",
+        "show_status": "estado",
+        "inicio": "inicio",
+    }
+    return aliases.get(str(step), str(step))
+
+
+def short_state(mode: str) -> str:
+    aliases = {
+        "idle": "idle",
+        "sent": "sent",
+        "running": "run",
+        "partial": "part",
+        "done": "done",
+        "error": "error",
+        "waiting": "wait",
+        "ready": "ready",
+    }
+    return aliases.get(str(mode), str(mode))
+
+
+def okmark(value: bool) -> str:
+    return "OK" if value else "--"
+
+
 def show_status() -> None:
+    # Pantalla visible real: 128x96.
+    # Usamos solo 7 lineas compactas para que no se corte abajo.
+    step = short_step(state.current_step)
+    mode = short_state(state.current_state)
+    message = str(state.last_message).replace("\n", " ").strip()
+
     display.show([
-        "ESTADO FRAMEWORK",
-        f"Paso: {state.current_step[:14]}",
-        f"Modo: {state.current_state[:14]}",
-        f"Foto:  {'OK' if state.photo_done else '--'}",
-        f"Amb:   {'OK' if state.environment_done else '--'}",
-        f"Gcode: {'OK' if state.gcode_done else '--'}",
-        f"Draw:  {'OK' if state.executed_done else '--'}",
-        f"Prog:  {state.progress}%",
-        state.last_message[:21],
+        f"EST {state.progress:3d}% {mode[:7]}",
+        f"Paso:{step[:16]}",
+        f"Msg:{message[:17]}",
+        f"F:{okmark(state.photo_done)} A:{okmark(state.environment_done)}",
+        f"Dib:{okmark(state.drawing_done)} G:{okmark(state.gcode_done)}",
+        f"Exec:{okmark(state.executed_done)}",
+        f"{state.last_update[-8:] if state.last_update else ''}",
     ])
 
 
@@ -414,12 +454,12 @@ def show_action(title: str, message: str) -> None:
 def show_screen_message(title: str, message: str) -> None:
     display.show([
         title[:21],
-        "",
         message[:21],
-        "",
-        state.current_step[:21],
-        state.current_state[:21],
-        f"Prog: {state.progress}%",
+        f"Paso:{short_step(state.current_step)[:16]}",
+        f"Modo:{short_state(state.current_state)[:16]}",
+        f"Prog:{state.progress}%",
+        f"F:{okmark(state.photo_done)} A:{okmark(state.environment_done)}",
+        f"D:{okmark(state.drawing_done)} G:{okmark(state.gcode_done)} E:{okmark(state.executed_done)}",
     ])
 
 
