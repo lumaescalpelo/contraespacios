@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+# Logs y pruebas locales.
+*.log
+*.tmp
+
+# Datos externos o salidas si se copian accidentalmente aquí.
+data/
+sessions/
+output/
+drawing.gcode
+
+# Sistema/editor.
+.DS_Store
+Thumbs.db
+*~
