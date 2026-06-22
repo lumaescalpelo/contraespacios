@@ -262,6 +262,8 @@ La terminal debe imprimir un JSON parecido a:
   "svg": "/home/pi/data/sessions/S01/output/drawing.svg",
   "preview": "/home/pi/data/sessions/S01/output/preview.png",
   "gcode": "/home/pi/data/sessions/S01/output/drawing.gcode",
+  "gcode_done": true,
+  "session_has_gcode": true,
   "metadata": "/home/pi/data/sessions/S01/output/metadata.json",
   "generation_log": "/home/pi/data/sessions/S01/output/generation_log.json",
   "process_steps_dir": "/home/pi/data/sessions/S01/output/process_steps",
@@ -316,6 +318,8 @@ El JSON de salida ahora también incluye:
 ```json
 {
   "gcode": "/home/pi/data/sessions/S01/output/drawing.gcode",
+  "gcode_done": true,
+  "session_has_gcode": true,
   "process_steps_dir": "/home/pi/data/sessions/S01/output/process_steps",
   "process_manifest": "/home/pi/data/sessions/S01/output/process_steps/00_manifest.json"
 }

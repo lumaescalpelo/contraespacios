@@ -28,6 +28,8 @@ def update_session_json(session_json_path, session_id, metadata):
         data = {}
     data.setdefault("session_id", session_id)
     data["drawing_done"] = True
+    data["gcode_done"] = True
+    data["session_has_gcode"] = True
     data["updated_at"] = now_iso()
     data["status"] = "drawing_generated"
     data["output"] = {
@@ -132,6 +134,8 @@ def run(args):
         "svg": svg_info,
         "preview": preview_info,
         "gcode": gcode_info,
+        "gcode_done": True,
+        "session_has_gcode": True,
         "outputs": {
             "svg": str(svg_path),
             "preview": str(preview_path),
@@ -164,6 +168,8 @@ def run(args):
         "svg": str(svg_path),
         "preview": str(preview_path),
         "gcode": str(gcode_path),
+        "gcode_done": True,
+        "session_has_gcode": True,
         "metadata": str(metadata_path),
         "generation_log": str(log_path),
         "process_steps_dir": process_info["steps_dir"],

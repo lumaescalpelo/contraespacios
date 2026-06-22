@@ -21,6 +21,8 @@ const dataOut = { ...msg, payload: data };
 if (data.ok === true) {
   flow.set("drawing_done", true);
   flow.set("session_has_drawing", true);
+  flow.set("gcode_done", true);
+  flow.set("session_has_gcode", true);
   return [dataOut, {
     payload: JSON.stringify({
       type: "framework_state",
@@ -28,6 +30,9 @@ if (data.ok === true) {
       drawing: true,
       drawing_done: true,
       session_has_drawing: true,
+      gcode_done: true,
+      gcode_generated: true,
+      session_has_gcode: true,
       gcode: data.gcode,
       step: "drawing",
       state: "done",
