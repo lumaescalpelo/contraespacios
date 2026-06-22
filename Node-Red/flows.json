@@ -24,8 +24,8 @@
             "414875922b7d6e4e",
             "49be978a0f12a24b"
         ],
-        "x": 1514,
-        "y": 739,
+        "x": 1374,
+        "y": 639,
         "w": 232,
         "h": 142
     },
@@ -47,9 +47,9 @@
             "afe179e96ce1b1c1"
         ],
         "x": 54,
-        "y": 739,
+        "y": 599,
         "w": 312,
-        "h": 142
+        "h": 122
     },
     {
         "id": "8b854a66fc363cba",
@@ -192,7 +192,9 @@
             [
                 "f7cae1dbc726fb38"
             ],
-            [],
+            [
+                "f7cae1dbc726fb38"
+            ],
             [
                 "b2a66ee5b1cd25c8"
             ],
@@ -241,7 +243,8 @@
         "y": 340,
         "wires": [
             [
-                "f7545f5fc5ed5d01"
+                "f7545f5fc5ed5d01",
+                "f19e251037337628"
             ]
         ]
     },
@@ -297,8 +300,8 @@
         "complete": "false",
         "statusVal": "",
         "statusType": "auto",
-        "x": 1460,
-        "y": 640,
+        "x": 1400,
+        "y": 520,
         "wires": []
     },
     {
@@ -318,7 +321,7 @@
         "senderr": false,
         "headers": [],
         "x": 370,
-        "y": 700,
+        "y": 560,
         "wires": [
             [
                 "a5f67b701c90f255"
@@ -338,7 +341,7 @@
         "finalize": "",
         "libs": [],
         "x": 140,
-        "y": 700,
+        "y": 560,
         "wires": [
             [
                 "b20db3363f5101dc"
@@ -357,7 +360,7 @@
         "overwriteFile": "true",
         "encoding": "none",
         "x": 840,
-        "y": 700,
+        "y": 560,
         "wires": [
             [
                 "118a90ed1ccfe36e"
@@ -371,7 +374,7 @@
         "name": "Tomar Foto",
         "info": "",
         "x": 150,
-        "y": 640,
+        "y": 520,
         "wires": []
     },
     {
@@ -387,7 +390,7 @@
         "finalize": "",
         "libs": [],
         "x": 1090,
-        "y": 700,
+        "y": 560,
         "wires": [
             [
                 "414875922b7d6e4e"
@@ -407,8 +410,8 @@
         "outport": "",
         "base64": false,
         "multicast": "false",
-        "x": 1630,
-        "y": 840,
+        "x": 1490,
+        "y": 740,
         "wires": []
     },
     {
@@ -418,7 +421,7 @@
         "name": "Medir Ambiente",
         "info": "",
         "x": 160,
-        "y": 940,
+        "y": 760,
         "wires": []
     },
     {
@@ -434,7 +437,7 @@
         "finalize": "",
         "libs": [],
         "x": 190,
-        "y": 1000,
+        "y": 800,
         "wires": [
             [
                 "c92a4cf3e53d386a"
@@ -460,8 +463,8 @@
         "outport": "",
         "base64": false,
         "multicast": "false",
-        "x": 1310,
-        "y": 980,
+        "x": 510,
+        "y": 760,
         "wires": []
     },
     {
@@ -472,7 +475,7 @@
         "name": "Recibir Respuesta de ambiente",
         "info": "",
         "x": 210,
-        "y": 780,
+        "y": 640,
         "wires": []
     },
     {
@@ -488,7 +491,7 @@
         "group": "",
         "datatype": "utf8",
         "x": 140,
-        "y": 840,
+        "y": 680,
         "wires": [
             [
                 "e38712c1cb93a298"
@@ -504,7 +507,7 @@
         "action": "",
         "pretty": false,
         "x": 430,
-        "y": 840,
+        "y": 680,
         "wires": [
             [
                 "350768bd95b98620"
@@ -524,7 +527,7 @@
         "finalize": "",
         "libs": [],
         "x": 650,
-        "y": 840,
+        "y": 680,
         "wires": [
             [
                 "3d4e32f1372c1a23"
@@ -545,8 +548,8 @@
         "g": "36ae23ed91dfdeaa",
         "name": "Enviar a OLED",
         "info": "",
-        "x": 1620,
-        "y": 780,
+        "x": 1480,
+        "y": 680,
         "wires": []
     },
     {
@@ -582,7 +585,7 @@
         "finalize": "",
         "libs": [],
         "x": 610,
-        "y": 700,
+        "y": 560,
         "wires": [
             [
                 "f9bcf92008156283"
@@ -608,7 +611,7 @@
         "overwriteFile": "true",
         "encoding": "utf8",
         "x": 880,
-        "y": 820,
+        "y": 660,
         "wires": [
             [
                 "a592552c9a8b24db"
@@ -628,7 +631,7 @@
         "finalize": "",
         "libs": [],
         "x": 1110,
-        "y": 820,
+        "y": 660,
         "wires": [
             [
                 "45cbd856808d32bf"
@@ -640,6 +643,107 @@
         "outputLabels": [
             "debug",
             "5006"
+        ]
+    },
+    {
+        "id": "2cb38bbefe3ef0f4",
+        "type": "comment",
+        "z": "fbdc5aeae38a6415",
+        "name": "Generar Dibujo",
+        "info": "",
+        "x": 160,
+        "y": 860,
+        "wires": []
+    },
+    {
+        "id": "ee459efa11358aea",
+        "type": "exec",
+        "z": "fbdc5aeae38a6415",
+        "command": "/home/pi/Documents/GitHub/contraespacios/Drawing/.venv/bin/python3 /home/pi/Documents/GitHub/contraespacios/Drawing/generate_drawing.py",
+        "addpay": "payload",
+        "append": "",
+        "useSpawn": "false",
+        "timer": "60",
+        "winHide": false,
+        "oldrc": false,
+        "name": "",
+        "x": 890,
+        "y": 960,
+        "wires": [
+            [
+                "0ae74d93438faf4a"
+            ],
+            [
+                "58e394ce8d10a26d"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "f19e251037337628",
+        "type": "function",
+        "z": "fbdc5aeae38a6415",
+        "name": "preparar_generate_drawing",
+        "func": "// preparar_generate_drawing\n// Salida 1: mensaje inmediato al OLED\n// Salida 2: argumentos para el nodo exec\n\nfunction sh(value) {\n    return \"'\" + String(value).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nif (flow.get(\"drawing_busy\")) {\n    const oledBusy = {\n        payload: JSON.stringify({\n            type: \"oled\",\n            screen: \"drawing_busy\",\n            line1: \"Ya estoy\",\n            line2: \"generando...\"\n        })\n    };\n\n    return [oledBusy, null];\n}\n\nconst input = msg.payload || {};\n\nconst session =\n    input.session_id ||\n    input.session ||\n    flow.get(\"current_session\") ||\n    \"S01\";\n\nflow.set(\"drawing_busy\", true);\nflow.set(\"drawing_session\", session);\n\nconst oledMsg = {\n    payload: JSON.stringify({\n        type: \"oled\",\n        screen: \"drawing_start\",\n        line1: \"Generando\",\n        line2: \"dibujo...\"\n    })\n};\n\nconst execMsg = {\n    payload: [\n        \"--session\", sh(session),\n        \"--data-root\", sh(\"/home/pi/data\"),\n        \"--landscape-bands\", \"4\",\n        \"--internal-lines\", \"3\",\n        \"--max-contours\", \"4\"\n    ].join(\" \")\n};\n\nreturn [oledMsg, execMsg];",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 200,
+        "y": 900,
+        "wires": [
+            [
+                "414875922b7d6e4e"
+            ],
+            [
+                "ee459efa11358aea"
+            ]
+        ],
+        "outputLabels": [
+            "5006",
+            "exec"
+        ]
+    },
+    {
+        "id": "0ae74d93438faf4a",
+        "type": "function",
+        "z": "fbdc5aeae38a6415",
+        "name": "resultado_generate_drawing",
+        "func": "// resultado_generate_drawing\n// Se ejecuta cuando generate_drawing.py termina correctamente por stdout\n\nflow.set(\"drawing_busy\", false);\n\nlet result;\n\ntry {\n    result = JSON.parse(msg.payload);\n} catch (err) {\n    msg.payload = JSON.stringify({\n        type: \"status\",\n        step: \"drawing\",\n        state: \"error\",\n        message: \"JSON invalido\",\n        screen: \"status\",\n        command: \"show_status\"\n    });\n\n    msg.ip = \"127.0.0.1\";\n    msg.host = \"127.0.0.1\";\n    msg.port = 5006;\n\n    return msg;\n}\n\nconst sessionId =\n    result.session_id ||\n    msg.session_id ||\n    flow.get(\"drawing_session\") ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nif (result.ok === true) {\n    flow.set(\"drawing_done\", true);\n    flow.set(\"session_has_drawing\", true);\n\n    msg.payload = JSON.stringify({\n        type: \"framework_state\",\n\n        // Esto actualiza el estado\n        session_id: sessionId,\n        drawing: true,\n        drawing_done: true,\n        session_has_drawing: true,\n\n        // Esto le dice al OLED que cambie de pantalla\n        screen: \"status\",\n        command: \"show_status\",\n\n        // Texto / estado\n        step: \"drawing\",\n        state: \"done\",\n        message: \"Dibujo generado\",\n        progress: 75,\n\n        // Opcional, por si luego quieres mostrar rutas\n        svg: result.svg,\n        preview: result.preview,\n        steps: result.process_steps_dir\n    });\n\n    msg.ip = \"127.0.0.1\";\n    msg.host = \"127.0.0.1\";\n    msg.port = 5006;\n\n    node.status({\n        fill: \"green\",\n        shape: \"dot\",\n        text: `${sessionId} dibujo OK`\n    });\n\n    return msg;\n}\n\nflow.set(\"drawing_done\", false);\nflow.set(\"session_has_drawing\", false);\n\nmsg.payload = JSON.stringify({\n    type: \"status\",\n    session_id: sessionId,\n    step: \"drawing\",\n    state: \"error\",\n    message: result.message || \"Error dibujo\",\n    screen: \"status\",\n    command: \"show_status\"\n});\n\nmsg.ip = \"127.0.0.1\";\nmsg.host = \"127.0.0.1\";\nmsg.port = 5006;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1560,
+        "y": 920,
+        "wires": [
+            [
+                "414875922b7d6e4e"
+            ]
+        ]
+    },
+    {
+        "id": "58e394ce8d10a26d",
+        "type": "function",
+        "z": "fbdc5aeae38a6415",
+        "name": "error_generate_drawing",
+        "func": "// error_generate_drawing\n// Maneja errores impresos por stderr\n\nflow.set(\"drawing_busy\", false);\n\nlet errorText = \"\";\n\nif (typeof msg.payload === \"string\") {\n    errorText = msg.payload;\n} else {\n    errorText = JSON.stringify(msg.payload);\n}\n\nnode.warn(errorText);\n\nmsg.payload = JSON.stringify({\n    type: \"oled\",\n    screen: \"drawing_error\",\n    line1: \"Error script\",\n    line2: errorText.slice(0, 18)\n});\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1550,
+        "y": 980,
+        "wires": [
+            [
+                "414875922b7d6e4e"
+            ]
         ]
     }
 ]
