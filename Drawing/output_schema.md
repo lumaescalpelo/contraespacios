@@ -5,6 +5,7 @@
 ```text
 /home/pi/data/sessions/Sxx/output/
 ├── drawing.svg
+├── drawing.gcode
 ├── preview.png
 ├── metadata.json
 ├── generation_log.json
@@ -23,6 +24,15 @@
 - previsualización rápida del dibujo;
 - sirve para comparar si el resultado se siente legible antes de mandar a la máquina.
 
+## `drawing.gcode`
+
+- G-code compatible con GRBL;
+- unidades en milímetros;
+- coordenadas absolutas;
+- área de trabajo por defecto de 30 mm x 32 mm;
+- requiere homing antes de ejecutarse;
+- no manda `$H` por sí mismo.
+
 ## `metadata.json`
 
 Incluye:
@@ -32,6 +42,7 @@ Incluye:
 - parámetros derivados del ambiente;
 - análisis de imagen;
 - datos de bandas, contornos y líneas internas.
+- ruta del archivo G-code generado.
 
 ## `process_steps/`
 

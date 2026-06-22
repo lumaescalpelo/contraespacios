@@ -39,6 +39,8 @@ class DrawingConfig:
     stroke_width_mm: float = 0.11
     preview_height_px: int = 700
     preview_line_width_px: int = 2
+    gcode_feed_mm_min: float = 300.0
+    gcode_seek_mm_min: float = 600.0
 
     algorithm_name: str = "contraespacios_svg_v4_30x32_legible"
 

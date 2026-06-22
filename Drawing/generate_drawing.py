@@ -8,6 +8,7 @@ from pathlib import Path
 
 from drawing_config import DrawingConfig, DEFAULT_CONFIG
 from environment_analysis import analyze_environment
+from gcode_generator import write_gcode
 from image_analysis import analyze_photos
 from preview_generator import write_preview
 from process_steps import save_process_steps
@@ -32,6 +33,7 @@ def update_session_json(session_json_path, session_id, metadata):
     data["output"] = {
         "drawing_svg": metadata["outputs"]["svg"],
         "preview_png": metadata["outputs"]["preview"],
+        "drawing_gcode": metadata["outputs"]["gcode"],
         "metadata_json": metadata["outputs"]["metadata"],
         "generation_log_json": metadata["outputs"]["generation_log"],
     }
@@ -64,6 +66,8 @@ def build_config(args):
         stroke_width_mm=DEFAULT_CONFIG.stroke_width_mm,
         preview_height_px=int(args.preview_height_px),
         preview_line_width_px=DEFAULT_CONFIG.preview_line_width_px,
+        gcode_feed_mm_min=float(args.gcode_feed_mm_min),
+        gcode_seek_mm_min=float(args.gcode_seek_mm_min),
         algorithm_name=DEFAULT_CONFIG.algorithm_name,
     )
 
@@ -81,11 +85,19 @@ def run(args):
     output_dir = session["paths"]["output"]
     svg_path = output_dir / "drawing.svg"
     preview_path = output_dir / "preview.png"
+    gcode_path = output_dir / "drawing.gcode"
     metadata_path = output_dir / "metadata.json"
     log_path = output_dir / "generation_log.json"
 
     svg_info = write_svg(svg_path, paths, config)
     preview_info = write_preview(preview_path, paths, config)
+    gcode_info = write_gcode(
+        gcode_path,
+        paths,
+        config,
+        feed_mm_min=config.gcode_feed_mm_min,
+        seek_mm_min=config.gcode_seek_mm_min,
+    )
     process_info = save_process_steps(session, image_analysis, env_stats, visual, config, output_dir)
     duration = round(time.time() - t0, 3)
     finished = now_iso()
@@ -105,6 +117,7 @@ def run(args):
             "coordinate_space": "millimeters",
             "continuous_path": True,
             "z_axis_required": False,
+            "requires_homing_before_execution": True,
         },
         "inputs": {
             "photos_used": image_analysis["meta"]["photos_used"],
@@ -118,9 +131,11 @@ def run(args):
         "drawing_analysis": drawing_meta,
         "svg": svg_info,
         "preview": preview_info,
+        "gcode": gcode_info,
         "outputs": {
             "svg": str(svg_path),
             "preview": str(preview_path),
+            "gcode": str(gcode_path),
             "metadata": str(metadata_path),
             "generation_log": str(log_path),
             "process_steps_dir": process_info["steps_dir"],
@@ -148,6 +163,7 @@ def run(args):
         "message": "Dibujo generado",
         "svg": str(svg_path),
         "preview": str(preview_path),
+        "gcode": str(gcode_path),
         "metadata": str(metadata_path),
         "generation_log": str(log_path),
         "process_steps_dir": process_info["steps_dir"],
@@ -183,6 +199,8 @@ def parse_args():
     p.add_argument("--internal-dark-threshold", type=float, default=0.46)
     p.add_argument("--internal-amplitude-mm", type=float, default=0.42)
     p.add_argument("--preview-height-px", type=int, default=700)
+    p.add_argument("--gcode-feed-mm-min", type=float, default=300.0)
+    p.add_argument("--gcode-seek-mm-min", type=float, default=600.0)
     return p.parse_args()
 
 

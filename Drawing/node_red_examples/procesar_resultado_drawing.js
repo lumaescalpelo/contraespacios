@@ -28,9 +28,10 @@ if (data.ok === true) {
       drawing: true,
       drawing_done: true,
       session_has_drawing: true,
+      gcode: data.gcode,
       step: "drawing",
       state: "done",
-      message: "Dibujo generado",
+      message: "Dibujo y G-code generado",
       progress: 75
     }),
     ip: "127.0.0.1",

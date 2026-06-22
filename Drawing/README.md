@@ -1,6 +1,6 @@
 # Contra Espacios · Drawing v4 con pasos de proceso
 
-Esta versión genera el dibujo SVG y además guarda una carpeta con los pasos intermedios del proceso para poder entender cómo se transforma la imagen.
+Esta versión genera el dibujo SVG, el G-code para GRBL y además guarda una carpeta con los pasos intermedios del proceso para poder entender cómo se transforma la imagen.
 
 La corrección importante de esta versión es que `process_steps.py` ya no tiene el error de sintaxis en la escritura de `README_steps.txt`. Sí, un salto de línea mal escapado tumbó todo el motor, porque Python también tiene sus berrinches miniatura.
 
@@ -15,6 +15,25 @@ El cambio está aplicado como valor por defecto en `drawing_config.py` y en los 
 ```text
 --film-width-mm 30 --film-height-mm 32
 ```
+
+El G-code se guarda como:
+
+```text
+/home/pi/data/sessions/S01/output/drawing.gcode
+```
+
+Esta versión solo genera el archivo. La ejecución física se hará en el siguiente paso desde `Ejecutar dibujo`.
+
+Para ejecutar con homing, la lógica recomendada será:
+
+```text
+Ejecutar dibujo
+→ mandar $H a GRBL
+→ establecer el cero de trabajo después del homing
+→ transmitir drawing.gcode
+```
+
+No se usa origen manual en esta etapa.
 
 ---
 
@@ -145,11 +164,14 @@ Deberías ver:
 
 ```text
 drawing.svg
+drawing.gcode
 preview.png
 metadata.json
 generation_log.json
 process_steps/
 ```
+
+`drawing.gcode` usa milímetros, coordenadas absolutas y está pensado para GRBL. El archivo no manda `$H` por sí mismo para mantenerlo como G-code limpio; el homing debe hacerlo el flujo de ejecución antes de transmitirlo.
 
 ---
 
@@ -239,6 +261,7 @@ La terminal debe imprimir un JSON parecido a:
   "message": "Dibujo generado",
   "svg": "/home/pi/data/sessions/S01/output/drawing.svg",
   "preview": "/home/pi/data/sessions/S01/output/preview.png",
+  "gcode": "/home/pi/data/sessions/S01/output/drawing.gcode",
   "metadata": "/home/pi/data/sessions/S01/output/metadata.json",
   "generation_log": "/home/pi/data/sessions/S01/output/generation_log.json",
   "process_steps_dir": "/home/pi/data/sessions/S01/output/process_steps",
@@ -292,7 +315,25 @@ El JSON de salida ahora también incluye:
 
 ```json
 {
+  "gcode": "/home/pi/data/sessions/S01/output/drawing.gcode",
   "process_steps_dir": "/home/pi/data/sessions/S01/output/process_steps",
   "process_manifest": "/home/pi/data/sessions/S01/output/process_steps/00_manifest.json"
 }
 ```
+
+## 9. Git
+
+Esta carpeta incluye un `.gitignore` para evitar subir archivos temporales:
+
+```text
+.venv/
+__pycache__/
+drawing.svg
+drawing.gcode
+preview.png
+metadata.json
+generation_log.json
+process_steps/
+```
+
+Con eso no deberías tener que resetear el `HEAD` por cachés de Python o salidas generadas localmente.

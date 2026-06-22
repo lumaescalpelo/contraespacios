@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+# Salidas generadas localmente.
+output/
+process_steps/
+drawing.svg
+drawing.gcode
+preview.png
+metadata.json
+generation_log.json
+
+# Archivos temporales del sistema/editor.
+.DS_Store
+Thumbs.db
+*~
