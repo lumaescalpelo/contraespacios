@@ -3,9 +3,9 @@ from dataclasses import dataclass
 
 @dataclass
 class DrawingConfig:
-    # V3 nace horizontal.
-    film_width_mm: float = 43.0
-    film_height_mm: float = 16.0
+    # Area de dibujo calibrada para la maquina actual.
+    film_width_mm: float = 30.0
+    film_height_mm: float = 32.0
     margin_mm: float = 0.8
 
     image_process_height_px: int = 420
@@ -40,7 +40,7 @@ class DrawingConfig:
     preview_height_px: int = 700
     preview_line_width_px: int = 2
 
-    algorithm_name: str = "contraespacios_svg_v4_landscape_legible"
+    algorithm_name: str = "contraespacios_svg_v4_30x32_legible"
 
 
 DEFAULT_CONFIG = DrawingConfig()

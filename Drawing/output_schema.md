@@ -1,4 +1,4 @@
-# Output schema · Drawing v3 Landscape
+# Output schema · Drawing v4 30x32
 
 ## Archivos generados
 
@@ -7,20 +7,21 @@
 ├── drawing.svg
 ├── preview.png
 ├── metadata.json
-└── generation_log.json
+├── generation_log.json
+└── process_steps/
 ```
 
 ## `drawing.svg`
 
 - dibujo vectorial principal;
 - unidades en milímetros;
-- orientado horizontalmente por defecto;
+- tamaño por defecto de 30 mm x 32 mm;
 - trayectoria continua pensada para un sistema sin eje Z.
 
 ## `preview.png`
 
 - previsualización rápida del dibujo;
-- sirve para comparar si el resultado se siente más paisaje y más reminiscente de la escena.
+- sirve para comparar si el resultado se siente legible antes de mandar a la máquina.
 
 ## `metadata.json`
 
@@ -32,6 +33,8 @@ Incluye:
 - análisis de imagen;
 - datos de bandas, contornos y líneas internas.
 
+## `process_steps/`
 
+Incluye imágenes y archivos JSON secuenciales para revisar cómo se transformó la imagen antes de llegar al SVG final.
 
-> Esta versión usa el estilo `landscape_legible` y una compresión suave de parámetros.
+> Esta versión usa el estilo `contraespacios_svg_v4_30x32_legible` y conserva la salida JSON usada por Node-RED.

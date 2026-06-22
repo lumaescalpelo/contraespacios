@@ -4,6 +4,18 @@ Esta versión genera el dibujo SVG y además guarda una carpeta con los pasos in
 
 La corrección importante de esta versión es que `process_steps.py` ya no tiene el error de sintaxis en la escritura de `README_steps.txt`. Sí, un salto de línea mal escapado tumbó todo el motor, porque Python también tiene sus berrinches miniatura.
 
+Esta variante está ajustada para el área de dibujo actual:
+
+```text
+30 mm x 32 mm
+```
+
+El cambio está aplicado como valor por defecto en `drawing_config.py` y en los argumentos por defecto de `generate_drawing.py`. Si Node-RED ya ejecuta el script sin pasar `--film-width-mm` ni `--film-height-mm`, no hay que cambiar el flujo. Si tu nodo sí manda esas opciones explícitamente, deben quedar como:
+
+```text
+--film-width-mm 30 --film-height-mm 32
+```
+
 ---
 
 ## 0. Comando rápido de instalación limpia

@@ -150,6 +150,8 @@ def run(args):
         "preview": str(preview_path),
         "metadata": str(metadata_path),
         "generation_log": str(log_path),
+        "process_steps_dir": process_info["steps_dir"],
+        "process_manifest": process_info["manifest"],
         "photos_used": metadata["inputs"]["photos_used"],
         "environment_readings_used": metadata["inputs"]["environment_readings_used"],
         "duration_seconds": duration,
@@ -157,11 +159,11 @@ def run(args):
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Genera SVG v4 landscape legible para Contra Espacios.")
+    p = argparse.ArgumentParser(description="Genera SVG v4 legible 30x32 mm para Contra Espacios.")
     p.add_argument("--session", required=True)
     p.add_argument("--data-root", default="/home/pi/data")
-    p.add_argument("--film-width-mm", type=float, default=43.0)
-    p.add_argument("--film-height-mm", type=float, default=16.0)
+    p.add_argument("--film-width-mm", type=float, default=30.0)
+    p.add_argument("--film-height-mm", type=float, default=32.0)
     p.add_argument("--margin-mm", type=float, default=0.8)
     p.add_argument("--max-photos", type=int, default=12)
     p.add_argument("--image-process-height-px", type=int, default=420)
