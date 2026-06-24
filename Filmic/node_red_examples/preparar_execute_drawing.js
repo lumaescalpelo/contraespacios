@@ -11,7 +11,9 @@ msg.payload = [
   "--session", sessionId,
   "--data-root", "/home/pi/data",
   "--homing",
-  "--set-work-zero"
+  "--calibrate-area",
+  "--set-work-zero",
+  "--unlock"
 ].join(" ");
 
 return msg;
