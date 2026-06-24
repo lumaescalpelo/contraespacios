@@ -23,7 +23,7 @@ def _path_bounds(paths):
 
 def _transform_point(x, y, config):
     """Convierte coordenadas del dibujo a coordenadas de máquina."""
-    mode = getattr(config, "gcode_y_mode", "flip")
+    mode = getattr(config, "gcode_y_mode", "direct")
     if mode == "direct":
         return x, y
     if mode == "flip":
@@ -37,7 +37,7 @@ def make_gcode(paths, config, feed_mm_min=300.0, seek_mm_min=600.0):
         "(Contraespacios drawing)",
         f"(area_mm: {_fmt(config.film_width_mm)} x {_fmt(config.film_height_mm)})",
         "(requires_homing_before_execution: true)",
-        f"(gcode_y_mode: {getattr(config, 'gcode_y_mode', 'flip')})",
+        f"(gcode_y_mode: {getattr(config, 'gcode_y_mode', 'direct')})",
         "G21",
         "G90",
         "G17",
@@ -84,7 +84,7 @@ def make_gcode(paths, config, feed_mm_min=300.0, seek_mm_min=600.0):
         "bounds": bounds,
         "units": "mm",
         "absolute_coordinates": True,
-        "gcode_y_mode": getattr(config, "gcode_y_mode", "flip"),
+        "gcode_y_mode": getattr(config, "gcode_y_mode", "direct"),
         "requires_homing_before_execution": True,
         "work_area_mm": {
             "width": float(config.film_width_mm),

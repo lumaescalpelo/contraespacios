@@ -19,13 +19,28 @@ def flatten_paths(paths):
     return out
 
 
-def _nearest_order(paths):
+def _path_start_point(config):
+    corner = getattr(config, "path_start_corner", "top_right")
+    film_w = float(config.film_width_mm)
+    film_h = float(config.film_height_mm)
+    points = {
+        "top_left": (0.0, 0.0),
+        "top_right": (film_w, 0.0),
+        "bottom_left": (0.0, film_h),
+        "bottom_right": (film_w, film_h),
+    }
+    if corner not in points:
+        raise ValueError(f"Esquina inicial no soportada: {corner}")
+    return points[corner]
+
+
+def _nearest_order(paths, start=(0.0, 0.0)):
     if not paths:
         return []
     remaining = [list(p) for p in paths if len(p) > 1]
-    ordered = [remaining.pop(0)]
+    ordered = []
+    last = start
     while remaining:
-        last = ordered[-1][-1]
         best_idx = 0
         best_rev = False
         best_d = None
@@ -44,6 +59,7 @@ def _nearest_order(paths):
         if best_rev:
             picked = list(reversed(picked))
         ordered.append(picked)
+        last = picked[-1]
     return ordered
 
 
@@ -205,12 +221,15 @@ def build_drawing_paths(image_analysis, visual, config):
 
     # Pocas trayectorias, ordenadas por vecindad.
     grouped = band_paths + internal_paths + contour_paths
-    ordered = _nearest_order(grouped)
+    start = _path_start_point(config)
+    ordered = _nearest_order(grouped, start=start)
     meta = {
         **band_meta,
         **internal_meta,
         **contour_meta,
         "continuous_path": True,
+        "path_start_corner": getattr(config, "path_start_corner", "top_right"),
+        "path_start_point": {"x": start[0], "y": start[1]},
         "style": "landscape_legible",
     }
     return ordered, meta

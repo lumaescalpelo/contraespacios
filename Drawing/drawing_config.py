@@ -41,7 +41,8 @@ class DrawingConfig:
     preview_line_width_px: int = 2
     gcode_feed_mm_min: float = 300.0
     gcode_seek_mm_min: float = 600.0
-    gcode_y_mode: str = "flip"
+    gcode_y_mode: str = "direct"
+    path_start_corner: str = "top_right"
 
     algorithm_name: str = "contraespacios_svg_v4_30x32_legible"
 

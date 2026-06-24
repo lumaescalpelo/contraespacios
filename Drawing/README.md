@@ -54,22 +54,23 @@ X positivo: derecha
 Y positivo: abajo
 ```
 
-Durante la prueba real se observó que el G-code generado estaba siendo interpretado como si el origen visual fuera izquierda-abajo. Para corregirlo, esta versión genera `drawing.gcode` con:
-
-```text
---gcode-y-mode flip
-```
-
-Ese modo invierte Y al escribir el G-code:
-
-```text
-Y_gcode = film_height_mm - Y_dibujo
-```
-
-Si en una prueba futura necesitas volver a mandar Y sin transformar:
+Para la máquina actual, donde `+Y` baja físicamente, esta versión genera `drawing.gcode` con:
 
 ```text
 --gcode-y-mode direct
+--path-start-corner top_right
+```
+
+Ese modo manda Y sin transformar al escribir el G-code:
+
+```text
+Y_gcode = Y_dibujo
+```
+
+Si en una prueba futura necesitas invertir Y:
+
+```text
+--gcode-y-mode flip
 ```
 
 ## Configuración GRBL Usada En Pruebas
@@ -195,7 +196,8 @@ Ese comando usa por defecto:
 ```text
 --film-width-mm 30
 --film-height-mm 32
---gcode-y-mode flip
+--gcode-y-mode direct
+--path-start-corner top_right
 ```
 
 Comando equivalente explícito:
@@ -206,7 +208,8 @@ python3 generate_drawing.py \
   --data-root /home/pi/data \
   --film-width-mm 30 \
   --film-height-mm 32 \
-  --gcode-y-mode flip \
+  --gcode-y-mode direct \
+  --path-start-corner top_right \
   --landscape-bands 4 \
   --internal-lines 3 \
   --max-contours 4
@@ -324,10 +327,10 @@ Payload típico:
 --session S01 --data-root /home/pi/data --landscape-bands 4 --internal-lines 3 --max-contours 4
 ```
 
-Si se quiere dejar explícita la corrección de Y:
+Si se quiere dejar explícita la orientación y el arranque:
 
 ```text
---session S01 --data-root /home/pi/data --gcode-y-mode flip --landscape-bands 4 --internal-lines 3 --max-contours 4
+--session S01 --data-root /home/pi/data --gcode-y-mode direct --path-start-corner top_right --landscape-bands 4 --internal-lines 3 --max-contours 4
 ```
 
 ## Ejecutar El G-code
