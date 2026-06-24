@@ -335,6 +335,100 @@ def validate_gcode_bounds(lines, width_mm, height_mm, margin_mm=0.0):
     return bounds
 
 
+def _fmt(value):
+    return f"{float(value):.4f}".rstrip("0").rstrip(".")
+
+
+def _replace_axis_words(line, replacements):
+    def repl(match):
+        axis = match.group(1)
+        if axis in replacements:
+            return f"{axis}{_fmt(replacements[axis])}"
+        return match.group(0)
+
+    return AXIS_WORD_RE.sub(repl, line)
+
+
+def fit_gcode_to_area(lines, width_mm, height_mm, margin_mm=1.0, mode="uniform"):
+    bounds = gcode_bounds(lines)
+    if bounds["min_x"] is None:
+        return lines, {
+            "scaled": False,
+            "reason": "Sin movimientos X/Y para escalar",
+            "bounds_before": bounds,
+        }
+
+    src_w = max(0.001, bounds["max_x"] - bounds["min_x"])
+    src_h = max(0.001, bounds["max_y"] - bounds["min_y"])
+    dst_w = max(0.001, float(width_mm) - float(margin_mm) * 2.0)
+    dst_h = max(0.001, float(height_mm) - float(margin_mm) * 2.0)
+
+    if mode == "stretch":
+        scale_x = dst_w / src_w
+        scale_y = dst_h / src_h
+    elif mode == "uniform":
+        scale = min(dst_w / src_w, dst_h / src_h)
+        scale_x = scale_y = scale
+    else:
+        raise ValueError(f"Modo de ajuste no soportado: {mode}")
+
+    fitted_w = src_w * scale_x
+    fitted_h = src_h * scale_y
+    offset_x = float(margin_mm) + (dst_w - fitted_w) / 2.0 - bounds["min_x"] * scale_x
+    offset_y = float(margin_mm) + (dst_h - fitted_h) / 2.0 - bounds["min_y"] * scale_y
+
+    absolute = True
+    scaled_lines = [
+        "(Filmic fit-to-calibrated-area)",
+        f"(calibrated_area_mm: {_fmt(width_mm)} x {_fmt(height_mm)})",
+        f"(fit_margin_mm: {_fmt(margin_mm)})",
+        f"(fit_mode: {mode})",
+        f"(scale_x: {_fmt(scale_x)})",
+        f"(scale_y: {_fmt(scale_y)})",
+    ]
+
+    for line in lines:
+        upper = line.upper()
+        if "G90" in upper:
+            absolute = True
+            scaled_lines.append(line)
+            continue
+        if "G91" in upper:
+            absolute = False
+            scaled_lines.append(line)
+            continue
+
+        words = {m.group(1): float(m.group(2)) for m in AXIS_WORD_RE.finditer(upper)}
+        replacements = {}
+
+        if "X" in words:
+            replacements["X"] = words["X"] * scale_x + offset_x if absolute else words["X"] * scale_x
+        if "Y" in words:
+            replacements["Y"] = words["Y"] * scale_y + offset_y if absolute else words["Y"] * scale_y
+
+        if replacements:
+            scaled_lines.append(_replace_axis_words(line, replacements))
+        else:
+            scaled_lines.append(line)
+
+    bounds_after = gcode_bounds(scaled_lines)
+    return scaled_lines, {
+        "scaled": True,
+        "mode": mode,
+        "margin_mm": float(margin_mm),
+        "scale_x": scale_x,
+        "scale_y": scale_y,
+        "offset_x": offset_x,
+        "offset_y": offset_y,
+        "bounds_before": bounds,
+        "bounds_after": bounds_after,
+        "work_area_mm": {
+            "width": float(width_mm),
+            "height": float(height_mm),
+        },
+    }
+
+
 def scan_axis_until_limit(ser, axis, direction, args):
     axis = axis.upper()
     if axis not in ("X", "Y"):
@@ -342,8 +436,10 @@ def scan_axis_until_limit(ser, axis, direction, args):
 
     sign = 1.0 if int(direction) >= 0 else -1.0
     step = abs(float(args.calibration_step_mm)) * sign
+    fine_step = abs(float(args.calibration_fine_step_mm)) * sign
     max_mm = float(args.calibration_max_x_mm if axis == "X" else args.calibration_max_y_mm)
     feed = float(args.calibration_feed_mm_min)
+    fine_feed = min(feed, float(args.calibration_fine_feed_mm_min))
     total = 0.0
 
     send_command(ser, "G91", timeout=5.0)
@@ -364,15 +460,44 @@ def scan_axis_until_limit(ser, axis, direction, args):
         total += step
 
         if axis in status["pins"]:
-            travel = abs(total)
             backoff = -sign * abs(float(args.calibration_backoff_mm))
 
             if alarm is not None:
                 send_command(ser, "$X", timeout=5.0)
 
             send_and_wait_idle(ser, f"G0 {axis}{backoff:.4f} F{feed:.4f}", timeout=10.0)
+            total += backoff
+
+            while abs(total) < max_mm:
+                status = read_status(ser)
+                if axis in status["pins"]:
+                    travel = abs(total)
+                    backoff = -sign * abs(float(args.calibration_backoff_mm))
+                    send_and_wait_idle(ser, f"G0 {axis}{backoff:.4f} F{feed:.4f}", timeout=10.0)
+                    send_command(ser, "G90", timeout=5.0)
+                    return travel, status
+
+                status, alarm = try_motion_and_status(
+                    ser,
+                    f"G0 {axis}{fine_step:.4f} F{fine_feed:.4f}",
+                    axis,
+                    timeout=10.0,
+                )
+                total += fine_step
+
+                if axis in status["pins"]:
+                    travel = abs(total)
+                    backoff = -sign * abs(float(args.calibration_backoff_mm))
+
+                    if alarm is not None:
+                        send_command(ser, "$X", timeout=5.0)
+
+                    send_and_wait_idle(ser, f"G0 {axis}{backoff:.4f} F{feed:.4f}", timeout=10.0)
+                    send_command(ser, "G90", timeout=5.0)
+                    return travel, status
+
             send_command(ser, "G90", timeout=5.0)
-            return travel, status
+            raise RuntimeError(f"No se pudo refinar límite {axis}.")
 
     send_command(ser, "G90", timeout=5.0)
     raise RuntimeError(f"No se encontró límite {axis} después de {max_mm:.1f} mm.")
@@ -480,6 +605,26 @@ def run(args):
             width = float(calibration["usable_width_mm"])
             height = float(calibration["usable_height_mm"])
 
+        fit_info = None
+        if args.fit_gcode_to_area and width > 0 and height > 0:
+            lines, fit_info = fit_gcode_to_area(
+                lines,
+                width,
+                height,
+                margin_mm=args.fit_margin_mm,
+                mode=args.fit_mode,
+            )
+            emit(
+                ok=True,
+                type="execute_progress",
+                session_id=args.session,
+                step="fit",
+                state="done",
+                progress=32,
+                message="G-code ajustado al área",
+                fit=fit_info,
+            )
+
         if args.validate_bounds and width > 0 and height > 0:
             bounds = validate_gcode_bounds(lines, width, height, margin_mm=args.bounds_margin_mm)
             emit(
@@ -488,7 +633,7 @@ def run(args):
                 session_id=args.session,
                 step="validate",
                 state="done",
-                progress=32,
+                progress=34,
                 message="G-code dentro del área",
                 bounds=bounds,
                 work_area_mm={"width": width, "height": height},
@@ -514,6 +659,7 @@ def run(args):
         "lines_sent": len(lines),
         "startup": startup,
         "calibration": calibration,
+        "fit": fit_info,
         "execution_done": True,
         "drawing_executed": True,
     }
@@ -533,9 +679,11 @@ def parse_args():
     p.add_argument("--unlock", action=argparse.BooleanOptionalAction, default=False)
     p.add_argument("--calibrate-area", action=argparse.BooleanOptionalAction, default=False)
     p.add_argument("--calibration-file", default="")
-    p.add_argument("--calibration-step-mm", type=float, default=1.0)
-    p.add_argument("--calibration-backoff-mm", type=float, default=2.0)
-    p.add_argument("--calibration-feed-mm-min", type=float, default=100.0)
+    p.add_argument("--calibration-step-mm", type=float, default=4.0)
+    p.add_argument("--calibration-fine-step-mm", type=float, default=1.0)
+    p.add_argument("--calibration-backoff-mm", type=float, default=6.0)
+    p.add_argument("--calibration-feed-mm-min", type=float, default=350.0)
+    p.add_argument("--calibration-fine-feed-mm-min", type=float, default=180.0)
     p.add_argument("--calibration-max-x-mm", type=float, default=200.0)
     p.add_argument("--calibration-max-y-mm", type=float, default=200.0)
     p.add_argument("--calibrate-x-dir", type=int, choices=(-1, 1), default=1)
@@ -543,6 +691,9 @@ def parse_args():
     p.add_argument("--home-corner", default="top_left")
     p.add_argument("--work-width-mm", type=float, default=0.0)
     p.add_argument("--work-height-mm", type=float, default=0.0)
+    p.add_argument("--fit-gcode-to-area", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--fit-margin-mm", type=float, default=1.0)
+    p.add_argument("--fit-mode", choices=("uniform", "stretch"), default="uniform")
     p.add_argument("--validate-bounds", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--bounds-margin-mm", type=float, default=0.2)
     return p.parse_args()

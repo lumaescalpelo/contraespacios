@@ -111,8 +111,9 @@ Flujo:
 5. Avanza Y hasta detectar `Pn:Y`.
 6. Regresa a home.
 7. Guarda el área útil en `/home/pi/data/machine/calibration.json`.
-8. Valida que `drawing.gcode` quepa dentro de esa área.
-9. Ejecuta el dibujo si todo está dentro de límites.
+8. Escala `drawing.gcode` en memoria para que quepa dentro de esa área.
+9. Valida que el G-code ajustado no salga del área calibrada.
+10. Ejecuta el dibujo ajustado.
 
 Durante esta calibración se recomienda mantener los hard limits apagados:
 
@@ -207,11 +208,21 @@ python3 execute_drawing.py \
   --port /dev/ttyACM0 \
   --homing \
   --calibrate-area \
+  --calibrate-x-dir 1 \
+  --calibrate-y-dir -1 \
+  --calibration-step-mm 4 \
+  --calibration-fine-step-mm 1 \
+  --calibration-backoff-mm 6 \
+  --calibration-feed-mm-min 350 \
+  --calibration-fine-feed-mm-min 180 \
+  --fit-gcode-to-area \
+  --fit-margin-mm 1 \
+  --fit-mode uniform \
   --set-work-zero \
   --unlock
 ```
 
-El comando anterior mide el área útil antes de dibujar. Si quieres ejecutar usando un área manual sin calibrar, puedes usar:
+El comando anterior mide el área útil antes de dibujar y escala el G-code para usarla. Si quieres ejecutar usando un área manual sin calibrar, puedes usar:
 
 ```bash
 python3 execute_drawing.py \
@@ -222,7 +233,8 @@ python3 execute_drawing.py \
   --set-work-zero \
   --unlock \
   --work-width-mm 30 \
-  --work-height-mm 32
+  --work-height-mm 32 \
+  --fit-gcode-to-area
 ```
 
 Ejecutar dibujo sin homing, solo para diagnóstico:

@@ -14,8 +14,14 @@ msg.payload = [
   "--calibrate-area",
   "--calibrate-x-dir", "1",
   "--calibrate-y-dir", "-1",
-  "--calibration-step-mm", "1",
-  "--calibration-backoff-mm", "5",
+  "--calibration-step-mm", "4",
+  "--calibration-fine-step-mm", "1",
+  "--calibration-backoff-mm", "6",
+  "--calibration-feed-mm-min", "350",
+  "--calibration-fine-feed-mm-min", "180",
+  "--fit-gcode-to-area",
+  "--fit-margin-mm", "1",
+  "--fit-mode", "uniform",
   "--set-work-zero",
   "--unlock"
 ].join(" ");
