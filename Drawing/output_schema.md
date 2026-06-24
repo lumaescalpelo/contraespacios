@@ -30,8 +30,21 @@
 - unidades en milímetros;
 - coordenadas absolutas;
 - área de trabajo por defecto de 30 mm x 32 mm;
+- modo de Y por defecto: `flip`;
 - requiere homing antes de ejecutarse;
 - no manda `$H` por sí mismo.
+
+En modo `flip`, el generador escribe:
+
+```text
+Y_gcode = film_height_mm - Y_dibujo
+```
+
+Esto corrige el caso donde la máquina dibuja como si el origen visual fuera izquierda-abajo. Si se necesita mandar Y sin transformar, usar:
+
+```text
+--gcode-y-mode direct
+```
 
 ## `metadata.json`
 
@@ -43,6 +56,7 @@ Incluye:
 - análisis de imagen;
 - datos de bandas, contornos y líneas internas.
 - ruta del archivo G-code generado.
+- modo de transformación Y usado para G-code.
 
 ## `process_steps/`
 

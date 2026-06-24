@@ -2,39 +2,113 @@
 
 Motor de generación de dibujo para Contra Espacios.
 
-`Drawing` hace:
+`Drawing` toma fotos y lecturas ambientales de una sesión, genera una interpretación gráfica, guarda archivos de diagnóstico y produce el G-code que después ejecuta GRBL.
+
+## Qué Hace
 
 ```text
-leer fotos y lecturas ambientales
-generar drawing.svg
-generar preview.png
-generar process_steps/
-generar drawing.gcode
-responder JSON para Node-RED/OLED
+lee /home/pi/data/sessions/<SESSION_ID>/photos/
+lee /home/pi/data/sessions/<SESSION_ID>/environment/
+genera drawing.svg
+genera preview.png
+genera process_steps/
+genera drawing.gcode
+responde JSON para Node-RED/OLED
 ```
 
-`Drawing` no se conecta con GRBL y no mueve motores. La ejecución física la hace `Filmic`.
+`Drawing` no mueve motores. El movimiento físico se hace después con el ejecutor GRBL/Filmic.
 
 ## Área Actual
+
+El área de trabajo actual es:
 
 ```text
 30 mm x 32 mm
 ```
 
-Los valores por defecto están en:
+Por defecto:
 
 ```text
-drawing_config.py
-generate_drawing.py
+ancho X: 30 mm
+alto Y: 32 mm
 ```
 
-Si hace falta pasarlos explícitamente:
+Si se necesita indicarlo explícitamente:
 
 ```text
 --film-width-mm 30 --film-height-mm 32
 ```
 
+## Convención De Coordenadas
+
+La máquina quedó configurada para hacer homing en:
+
+```text
+esquina superior izquierda
+```
+
+La convención física esperada es:
+
+```text
+X positivo: derecha
+Y positivo: abajo
+```
+
+Durante la prueba real se observó que el G-code generado estaba siendo interpretado como si el origen visual fuera izquierda-abajo. Para corregirlo, esta versión genera `drawing.gcode` con:
+
+```text
+--gcode-y-mode flip
+```
+
+Ese modo invierte Y al escribir el G-code:
+
+```text
+Y_gcode = film_height_mm - Y_dibujo
+```
+
+Si en una prueba futura necesitas volver a mandar Y sin transformar:
+
+```text
+--gcode-y-mode direct
+```
+
+## Configuración GRBL Usada En Pruebas
+
+Valores comprobados hasta este punto:
+
+```text
+$100=44.440
+$101=44.440
+$27=10.000
+$21=0
+$22=1
+$23=1
+$3=0
+```
+
+Significado:
+
+```text
+$100/$101 -> pasos por mm de X/Y, igualados para pruebas
+$27       -> retirada después de tocar sensores de homing
+$21=0     -> límites duros apagados durante pruebas
+$22=1     -> homing activado
+$23=1     -> homing hacia esquina superior izquierda en esta máquina
+$3=0      -> dirección normal de movimiento
+```
+
+Antes de dibujar físicamente, confirmar en bCNC:
+
+```text
+$H
+?
+```
+
+El estado debe quedar en `Idle` y sin `Pn:X` ni `Pn:Y`.
+
 ## Instalar
+
+En Raspberry Pi:
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/Drawing
@@ -47,6 +121,7 @@ sudo apt install -y \
   python3-numpy \
   python3-pil
 
+rm -rf .venv
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 
@@ -58,11 +133,14 @@ pip install -r requirements.txt
 
 ```text
 svgwrite
+pyserial
 ```
 
-## Entrada De Datos
+OpenCV, NumPy y Pillow se instalan con `apt` para evitar compilaciones innecesarias en Raspberry Pi.
 
-El script lee sesiones desde:
+## Estructura De Datos
+
+La sesión debe existir en:
 
 ```text
 /home/pi/data/sessions/<SESSION_ID>/
@@ -73,13 +151,15 @@ Ejemplo:
 ```text
 /home/pi/data/sessions/S01/
 ├── photos/
+│   ├── photo_001.jpg
+│   └── photo_002.jpg
 ├── environment/
+│   ├── env_001.json
+│   └── env_002.json
 └── output/
 ```
 
-Las fotos deben ser JPEG válidos dentro de `photos/`.
-
-Las lecturas ambientales deben ser JSON válidos dentro de `environment/`, por ejemplo:
+Lectura ambiental válida:
 
 ```json
 {
@@ -96,6 +176,8 @@ Las lecturas ambientales deben ser JSON válidos dentro de `environment/`, por e
 
 ## Generar Dibujo
 
+Comando recomendado:
+
 ```bash
 cd ~/Documents/GitHub/contraespacios/Drawing
 source .venv/bin/activate
@@ -108,7 +190,31 @@ python3 generate_drawing.py \
   --max-contours 4
 ```
 
+Ese comando usa por defecto:
+
+```text
+--film-width-mm 30
+--film-height-mm 32
+--gcode-y-mode flip
+```
+
+Comando equivalente explícito:
+
+```bash
+python3 generate_drawing.py \
+  --session S01 \
+  --data-root /home/pi/data \
+  --film-width-mm 30 \
+  --film-height-mm 32 \
+  --gcode-y-mode flip \
+  --landscape-bands 4 \
+  --internal-lines 3 \
+  --max-contours 4
+```
+
 ## Salidas
+
+Después de generar:
 
 ```text
 /home/pi/data/sessions/<SESSION_ID>/output/
@@ -120,7 +226,15 @@ python3 generate_drawing.py \
 └── process_steps/
 ```
 
-`drawing.gcode` usa milímetros y coordenadas absolutas. No incluye `$H`. El homing lo hace `Filmic` antes de transmitir el archivo.
+`drawing.gcode`:
+
+```text
+usa milímetros
+usa coordenadas absolutas
+no manda $H
+no configura GRBL
+requiere homing antes de ejecutarse
+```
 
 ## process_steps
 
@@ -130,7 +244,7 @@ La carpeta:
 /home/pi/data/sessions/<SESSION_ID>/output/process_steps/
 ```
 
-incluye imágenes y JSON secuenciales para entender cómo se transformó la foto:
+contiene:
 
 ```text
 00_manifest.json
@@ -149,9 +263,11 @@ incluye imágenes y JSON secuenciales para entender cómo se transformó la foto
 README_steps.txt
 ```
 
+Sirve para revisar cómo se transformó la imagen antes de generar SVG y G-code.
+
 ## Respuesta JSON
 
-Al terminar imprime algo como:
+Al terminar, el script imprime un JSON:
 
 ```json
 {
@@ -170,16 +286,25 @@ Al terminar imprime algo como:
 }
 ```
 
-Node-RED usa esa respuesta para actualizar:
+Node-RED usa esos campos para actualizar la OLED:
 
 ```text
 Dib: OK
 G: OK
-F: número de fotos
-A: número de lecturas ambientales
 ```
 
-## Node-RED
+## Probar Sintaxis
+
+```bash
+cd ~/Documents/GitHub/contraespacios/Drawing
+source .venv/bin/activate
+
+python3 -m py_compile *.py
+```
+
+Si no imprime nada, la sintaxis está bien.
+
+## Integración Con Node-RED
 
 Nodo `exec`:
 
@@ -193,22 +318,36 @@ Activar:
 Append msg.payload
 ```
 
-Argumentos típicos:
+Payload típico:
 
 ```text
 --session S01 --data-root /home/pi/data --landscape-bands 4 --internal-lines 3 --max-contours 4
 ```
 
-Ejemplos:
+Si se quiere dejar explícita la corrección de Y:
 
 ```text
-node_red_examples/preparar_generate_drawing.js
-node_red_examples/procesar_resultado_drawing.js
+--session S01 --data-root /home/pi/data --gcode-y-mode flip --landscape-bands 4 --internal-lines 3 --max-contours 4
 ```
+
+## Ejecutar El G-code
+
+El G-code generado se ejecuta después desde el módulo de ejecución GRBL/Filmic.
+
+Secuencia esperada:
+
+```text
+homing $H
+poner cero de trabajo G10 L20 P1 X0 Y0
+transmitir drawing.gcode
+reportar progreso a Node-RED/OLED
+```
+
+No uses `Drawing` para corregir alarmas de GRBL. Si aparece `ALARM`, primero revisar sensores, homing, `$27`, `$23`, `$100` y `$101`.
 
 ## Git
 
-Esta carpeta ignora:
+Esta carpeta incluye `.gitignore` para evitar subir:
 
 ```text
 .venv/

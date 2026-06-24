@@ -10,6 +10,7 @@ drawing.gcode
 preview.png
 metadata.json
 generation_log.json
+*.log
 
 # Archivos temporales del sistema/editor.
 .DS_Store

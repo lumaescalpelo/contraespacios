@@ -21,12 +21,23 @@ def _path_bounds(paths):
     }
 
 
+def _transform_point(x, y, config):
+    """Convierte coordenadas del dibujo a coordenadas de máquina."""
+    mode = getattr(config, "gcode_y_mode", "flip")
+    if mode == "direct":
+        return x, y
+    if mode == "flip":
+        return x, float(config.film_height_mm) - y
+    raise ValueError(f"Modo de Y para G-code no soportado: {mode}")
+
+
 def make_gcode(paths, config, feed_mm_min=300.0, seek_mm_min=600.0):
     """Convierte las trayectorias continuas en G-code compatible con GRBL."""
     lines = [
         "(Contraespacios drawing)",
         f"(area_mm: {_fmt(config.film_width_mm)} x {_fmt(config.film_height_mm)})",
         "(requires_homing_before_execution: true)",
+        f"(gcode_y_mode: {getattr(config, 'gcode_y_mode', 'flip')})",
         "G21",
         "G90",
         "G17",
@@ -43,6 +54,7 @@ def make_gcode(paths, config, feed_mm_min=300.0, seek_mm_min=600.0):
             continue
 
         x0, y0 = path[0]
+        x0, y0 = _transform_point(x0, y0, config)
         if first_point:
             lines.append(f"G0 X{_fmt(x0)} Y{_fmt(y0)} F{_fmt(seek_mm_min)}")
             first_point = False
@@ -52,6 +64,7 @@ def make_gcode(paths, config, feed_mm_min=300.0, seek_mm_min=600.0):
             move_count += 1
 
         for x, y in path[1:]:
+            x, y = _transform_point(x, y, config)
             lines.append(f"G1 X{_fmt(x)} Y{_fmt(y)}")
             move_count += 1
 
@@ -71,6 +84,7 @@ def make_gcode(paths, config, feed_mm_min=300.0, seek_mm_min=600.0):
         "bounds": bounds,
         "units": "mm",
         "absolute_coordinates": True,
+        "gcode_y_mode": getattr(config, "gcode_y_mode", "flip"),
         "requires_homing_before_execution": True,
         "work_area_mm": {
             "width": float(config.film_width_mm),

@@ -70,6 +70,7 @@ def build_config(args):
         preview_line_width_px=DEFAULT_CONFIG.preview_line_width_px,
         gcode_feed_mm_min=float(args.gcode_feed_mm_min),
         gcode_seek_mm_min=float(args.gcode_seek_mm_min),
+        gcode_y_mode=args.gcode_y_mode,
         algorithm_name=DEFAULT_CONFIG.algorithm_name,
     )
 
@@ -117,6 +118,7 @@ def run(args):
             "margin_mm": config.margin_mm,
             "orientation": "horizontal" if config.film_width_mm >= config.film_height_mm else "vertical",
             "coordinate_space": "millimeters",
+            "gcode_y_mode": config.gcode_y_mode,
             "continuous_path": True,
             "z_axis_required": False,
             "requires_homing_before_execution": True,
@@ -207,6 +209,12 @@ def parse_args():
     p.add_argument("--preview-height-px", type=int, default=700)
     p.add_argument("--gcode-feed-mm-min", type=float, default=300.0)
     p.add_argument("--gcode-seek-mm-min", type=float, default=600.0)
+    p.add_argument(
+        "--gcode-y-mode",
+        choices=("flip", "direct"),
+        default="flip",
+        help="flip invierte Y para corregir montaje que dibuja desde izquierda-abajo; direct manda Y sin transformar.",
+    )
     return p.parse_args()
 
 
