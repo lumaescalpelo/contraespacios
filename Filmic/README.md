@@ -98,31 +98,6 @@ Ejecutor de dibujo:
 
 `Filmic` no analiza fotos, no genera SVG y no genera G-code.
 
-## Calibración Física Del Área
-
-`Filmic` puede verificar físicamente los dos extremos de cada eje antes de ejecutar el dibujo.
-
-Flujo:
-
-1. Hace homing con `$H`.
-2. Pone cero temporal en home.
-3. Avanza X hasta detectar `Pn:X`.
-4. Regresa a home.
-5. Avanza Y hasta detectar `Pn:Y`.
-6. Regresa a home.
-7. Guarda el área útil en `/home/pi/data/machine/calibration.json`.
-8. Escala `drawing.gcode` en memoria para que quepa dentro de esa área.
-9. Valida que el G-code ajustado no salga del área calibrada.
-10. Ejecuta el dibujo ajustado.
-
-Durante esta calibración se recomienda mantener los hard limits apagados:
-
-```text
-$21=0
-```
-
-Los sensores siguen apareciendo en el estado `Pn:X` y `Pn:Y`, pero GRBL no entra en alarma al tocarlos durante el barrido.
-
 ### `GRBL/`
 
 Firmware y documentación para Arduino Uno + CNC Shield:
@@ -207,34 +182,8 @@ python3 execute_drawing.py \
   --data-root /home/pi/data \
   --port /dev/ttyACM0 \
   --homing \
-  --calibrate-area \
-  --calibrate-x-dir 1 \
-  --calibrate-y-dir -1 \
-  --calibration-step-mm 4 \
-  --calibration-fine-step-mm 1 \
-  --calibration-backoff-mm 6 \
-  --calibration-feed-mm-min 350 \
-  --calibration-fine-feed-mm-min 180 \
-  --fit-gcode-to-area \
-  --fit-margin-mm 1 \
-  --fit-mode uniform \
   --set-work-zero \
   --unlock
-```
-
-El comando anterior mide el área útil antes de dibujar y escala el G-code para usarla. Si quieres ejecutar usando un área manual sin calibrar, puedes usar:
-
-```bash
-python3 execute_drawing.py \
-  --session S01 \
-  --data-root /home/pi/data \
-  --port /dev/ttyACM0 \
-  --homing \
-  --set-work-zero \
-  --unlock \
-  --work-width-mm 30 \
-  --work-height-mm 32 \
-  --fit-gcode-to-area
 ```
 
 Ejecutar dibujo sin homing, solo para diagnóstico:

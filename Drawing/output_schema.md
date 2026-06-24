@@ -30,21 +30,20 @@
 - unidades en milímetros;
 - coordenadas absolutas;
 - área de trabajo por defecto de 30 mm x 32 mm;
-- modo de Y por defecto: `direct`;
-- esquina inicial de referencia por defecto: `top_right`;
+- modo de Y por defecto: `flip`;
 - requiere homing antes de ejecutarse;
 - no manda `$H` por sí mismo.
 
-En modo `direct`, el generador escribe:
+En modo `flip`, el generador escribe:
 
 ```text
-Y_gcode = Y_dibujo
+Y_gcode = film_height_mm - Y_dibujo
 ```
 
-Si se necesita invertir Y, usar:
+Esto corrige el caso donde la máquina dibuja como si el origen visual fuera izquierda-abajo. Si se necesita mandar Y sin transformar, usar:
 
 ```text
---gcode-y-mode flip
+--gcode-y-mode direct
 ```
 
 ## `metadata.json`

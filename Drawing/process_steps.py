@@ -9,7 +9,6 @@ from svg_generator import (
     _internal_feature_lines,
     _contours_to_paths,
     _nearest_order,
-    _path_start_point,
 )
 from utils import ensure_dir, save_json
 
@@ -214,8 +213,7 @@ def save_process_steps(session, image_analysis, env_stats, visual, config, outpu
     )
 
     # 11. Resultado ordenado
-    start = _path_start_point(config)
-    ordered = _nearest_order(band_paths + internal_paths + contour_paths, start=start)
+    ordered = _nearest_order(band_paths + internal_paths + contour_paths)
 
     name = "11_final_ordered_paths_preview.png"
     write_preview(steps_dir / name, ordered, config)
@@ -234,8 +232,6 @@ def save_process_steps(session, image_analysis, env_stats, visual, config, outpu
             "internal_meta": internal_meta,
             "contour_meta": contour_meta,
             "final_paths_count": len(ordered),
-            "path_start_corner": getattr(config, "path_start_corner", "top_right"),
-            "path_start_point": {"x": start[0], "y": start[1]},
             "style": "landscape_legible_debug",
         },
     )

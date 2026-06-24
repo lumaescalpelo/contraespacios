@@ -253,7 +253,7 @@
         "type": "function",
         "z": "fbdc5aeae38a6415",
         "name": "execute_drawing",
-        "func": "const p = msg.payload || {};\n\nconst sessionId =\n    p.session_id ||\n    p.active_session ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nflow.set(\"active_session\", sessionId);\n\nmsg.session_id = sessionId;\nmsg.payload = p;\n\nnode.status({\n    fill: \"blue\",\n    shape: \"dot\",\n    text: `Ejecutar ${sessionId}`\n});\n\nreturn msg;",
+        "func": "msg.payload = msg.payload.command;\nreturn msg;",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
@@ -264,8 +264,7 @@
         "y": 400,
         "wires": [
             [
-                "f7545f5fc5ed5d01",
-                "ca31b4fae4ded149"
+                "f7545f5fc5ed5d01"
             ]
         ]
     },
@@ -685,7 +684,7 @@
         "type": "function",
         "z": "fbdc5aeae38a6415",
         "name": "preparar_generate_drawing",
-        "func": "// preparar_generate_drawing\n// Salida 1: OLED\n// Salida 2: exec Drawing\n\nfunction sh(value) {\n    return \"'\" + String(value).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nif (flow.get(\"drawing_busy\")) {\n    const oledBusy = {\n        payload: JSON.stringify({\n            type: \"screen\",\n            title: \"DIBUJO\",\n            message: \"Ya estoy generando...\"\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [oledBusy, null];\n}\n\nconst input = (msg.payload && typeof msg.payload === \"object\") ? msg.payload : {};\n\nconst session =\n    input.session_id ||\n    input.active_session ||\n    input.session ||\n    msg.session_id ||\n    flow.get(\"active_session\") ||\n    flow.get(\"current_session\") ||\n    \"S01\";\n\nflow.set(\"active_session\", session);\nflow.set(\"drawing_busy\", true);\nflow.set(\"drawing_session\", session);\n\nconst execMsg = {\n    session_id: session,\n    payload: [\n        \"--session\", sh(session),\n        \"--data-root\", sh(\"/home/pi/data\"),\n        \"--film-width-mm\", \"30\",\n        \"--film-height-mm\", \"32\",\n        \"--gcode-y-mode\", \"direct\",\n        \"--path-start-corner\", \"top_right\",\n        \"--landscape-bands\", \"4\",\n        \"--internal-lines\", \"3\",\n        \"--max-contours\", \"4\"\n    ].join(\" \")\n};\n\n// No mandamos status todavía para no brincar a pantalla de estado.\n// resultado_generate_drawing avisará cuando el dibujo y el G-code estén listos.\nreturn [null, execMsg];",
+        "func": "// preparar_generate_drawing\n// Salida 1: mensaje inmediato al OLED\n// Salida 2: argumentos para el nodo exec\n\nfunction sh(value) {\n    return \"'\" + String(value).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nif (flow.get(\"drawing_busy\")) {\n    const oledBusy = {\n        payload: JSON.stringify({\n            type: \"oled\",\n            screen: \"drawing_busy\",\n            line1: \"Ya estoy\",\n            line2: \"generando...\"\n        })\n    };\n\n    return [oledBusy, null];\n}\n\nconst input = msg.payload || {};\n\nconst session =\n    input.session_id ||\n    input.session ||\n    flow.get(\"current_session\") ||\n    \"S01\";\n\nflow.set(\"drawing_busy\", true);\nflow.set(\"drawing_session\", session);\n\nconst oledMsg = {\n    payload: JSON.stringify({\n        type: \"oled\",\n        screen: \"drawing_start\",\n        line1: \"Generando\",\n        line2: \"dibujo...\"\n    })\n};\n\nconst execMsg = {\n    payload: [\n        \"--session\", sh(session),\n        \"--data-root\", sh(\"/home/pi/data\"),\n        \"--landscape-bands\", \"4\",\n        \"--internal-lines\", \"3\",\n        \"--max-contours\", \"4\"\n    ].join(\" \")\n};\n\nreturn [oledMsg, execMsg];",
         "outputs": 2,
         "timeout": 0,
         "noerr": 0,
@@ -712,7 +711,7 @@
         "type": "function",
         "z": "fbdc5aeae38a6415",
         "name": "resultado_generate_drawing",
-        "func": "// resultado_generate_drawing\n\nflow.set(\"drawing_busy\", false);\n\nlet result;\n\ntry {\n    result = JSON.parse(msg.payload);\n} catch (err) {\n    msg.payload = JSON.stringify({\n        type: \"status\",\n        step: \"drawing\",\n        state: \"error\",\n        message: \"JSON invalido\",\n        screen: \"status\",\n        command: \"show_status\"\n    });\n\n    msg.ip = \"127.0.0.1\";\n    msg.host = \"127.0.0.1\";\n    msg.port = 5006;\n\n    return msg;\n}\n\nconst sessionId =\n    result.session_id ||\n    msg.session_id ||\n    flow.get(\"drawing_session\") ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nif (result.ok === true) {\n    flow.set(\"drawing_done\", true);\n    flow.set(\"session_has_drawing\", true);\n    flow.set(\"gcode_done\", true);\n    flow.set(\"session_has_gcode\", true);\n\n    msg.payload = JSON.stringify({\n        type: \"framework_state\",\n        session_id: sessionId,\n\n        drawing: true,\n        drawing_done: true,\n        session_has_drawing: true,\n\n        gcode: true,\n        gcode_done: true,\n        session_has_gcode: true,\n\n        screen: \"status\",\n        command: \"show_status\",\n\n        step: \"drawing\",\n        state: \"done\",\n        message: \"Dibujo generado\",\n        progress: 75,\n\n        svg: result.svg,\n        preview: result.preview,\n        gcode_path: result.gcode,\n        metadata: result.metadata,\n        generation_log: result.generation_log,\n        steps: result.process_steps_dir\n    });\n\n    msg.ip = \"127.0.0.1\";\n    msg.host = \"127.0.0.1\";\n    msg.port = 5006;\n\n    node.status({\n        fill: \"green\",\n        shape: \"dot\",\n        text: `${sessionId} dibujo + G-code OK`\n    });\n\n    return msg;\n}\n\nflow.set(\"drawing_done\", false);\nflow.set(\"session_has_drawing\", false);\nflow.set(\"gcode_done\", false);\nflow.set(\"session_has_gcode\", false);\n\nmsg.payload = JSON.stringify({\n    type: \"status\",\n    session_id: sessionId,\n\n    drawing: false,\n    drawing_done: false,\n    session_has_drawing: false,\n\n    gcode: false,\n    gcode_done: false,\n    session_has_gcode: false,\n\n    step: \"drawing\",\n    state: \"error\",\n    message: result.message || \"Error dibujo\",\n    screen: \"status\",\n    command: \"show_status\"\n});\n\nmsg.ip = \"127.0.0.1\";\nmsg.host = \"127.0.0.1\";\nmsg.port = 5006;\n\nnode.status({\n    fill: \"red\",\n    shape: \"ring\",\n    text: `${sessionId} error dibujo`\n});\n\nreturn msg;",
+        "func": "// resultado_generate_drawing\n// Se ejecuta cuando generate_drawing.py termina correctamente por stdout\n\nflow.set(\"drawing_busy\", false);\n\nlet result;\n\ntry {\n    result = JSON.parse(msg.payload);\n} catch (err) {\n    msg.payload = JSON.stringify({\n        type: \"status\",\n        step: \"drawing\",\n        state: \"error\",\n        message: \"JSON invalido\",\n        screen: \"status\",\n        command: \"show_status\"\n    });\n\n    msg.ip = \"127.0.0.1\";\n    msg.host = \"127.0.0.1\";\n    msg.port = 5006;\n\n    return msg;\n}\n\nconst sessionId =\n    result.session_id ||\n    msg.session_id ||\n    flow.get(\"drawing_session\") ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nif (result.ok === true) {\n    flow.set(\"drawing_done\", true);\n    flow.set(\"session_has_drawing\", true);\n\n    msg.payload = JSON.stringify({\n        type: \"framework_state\",\n\n        // Esto actualiza el estado\n        session_id: sessionId,\n        drawing: true,\n        drawing_done: true,\n        session_has_drawing: true,\n\n        // Esto le dice al OLED que cambie de pantalla\n        screen: \"status\",\n        command: \"show_status\",\n\n        // Texto / estado\n        step: \"drawing\",\n        state: \"done\",\n        message: \"Dibujo generado\",\n        progress: 75,\n\n        // Opcional, por si luego quieres mostrar rutas\n        svg: result.svg,\n        preview: result.preview,\n        steps: result.process_steps_dir\n    });\n\n    msg.ip = \"127.0.0.1\";\n    msg.host = \"127.0.0.1\";\n    msg.port = 5006;\n\n    node.status({\n        fill: \"green\",\n        shape: \"dot\",\n        text: `${sessionId} dibujo OK`\n    });\n\n    return msg;\n}\n\nflow.set(\"drawing_done\", false);\nflow.set(\"session_has_drawing\", false);\n\nmsg.payload = JSON.stringify({\n    type: \"status\",\n    session_id: sessionId,\n    step: \"drawing\",\n    state: \"error\",\n    message: result.message || \"Error dibujo\",\n    screen: \"status\",\n    command: \"show_status\"\n});\n\nmsg.ip = \"127.0.0.1\";\nmsg.host = \"127.0.0.1\";\nmsg.port = 5006;\n\nreturn msg;",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
@@ -741,129 +740,6 @@
         "libs": [],
         "x": 1550,
         "y": 980,
-        "wires": [
-            [
-                "414875922b7d6e4e"
-            ]
-        ]
-    },
-    {
-        "id": "77815b21a67ab57d",
-        "type": "comment",
-        "z": "fbdc5aeae38a6415",
-        "name": "Dibujar",
-        "info": "",
-        "x": 130,
-        "y": 1040,
-        "wires": []
-    },
-    {
-        "id": "ca31b4fae4ded149",
-        "type": "function",
-        "z": "fbdc5aeae38a6415",
-        "name": "preparar_execute_drawing",
-        "func": "// preparar_execute_drawing\n// Salida 1: OLED\n// Salida 2: exec Filmic\n\nfunction sh(value) {\n    return \"'\" + String(value).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nconst now = Date.now();\nconst startedAt = Number(flow.get(\"execution_started_at\") || 0);\nconst staleMs = 10 * 60 * 1000;\n\nif (flow.get(\"execution_busy\") === true && startedAt && (now - startedAt) < staleMs) {\n    const oledBusy = {\n        payload: JSON.stringify({\n            type: \"screen\",\n            title: \"DIBUJANDO\",\n            message: \"Ejecucion en curso\"\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [oledBusy, null];\n}\n\n// Si quedó un bloqueo viejo sin proceso activo, se limpia aquí.\nflow.set(\"execution_busy\", false);\nflow.set(\"execution_started_at\", 0);\n\nconst p = msg.payload || {};\n\nconst sessionId =\n    p.session_id ||\n    p.active_session ||\n    msg.session_id ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nflow.set(\"active_session\", sessionId);\nflow.set(\"execution_busy\", true);\nflow.set(\"execution_started_at\", now);\nflow.set(\"execution_done\", false);\nflow.set(\"drawing_executed\", false);\n\nconst execMsg = {\n    session_id: sessionId,\n    payload: [\n        \"--session\", sh(sessionId),\n        \"--data-root\", sh(\"/home/pi/data\"),\n        \"--port\", sh(\"/dev/ttyACM0\"),\n        \"--homing\",\n        \"--calibrate-area\",\n        \"--calibrate-x-dir\", \"1\",\n        \"--calibrate-y-dir\", \"-1\",\n        \"--calibration-step-mm\", \"4\",\n        \"--calibration-fine-step-mm\", \"1\",\n        \"--calibration-backoff-mm\", \"6\",\n        \"--calibration-feed-mm-min\", \"350\",\n        \"--calibration-fine-feed-mm-min\", \"180\",\n        \"--fit-gcode-to-area\",\n        \"--fit-margin-mm\", \"1\",\n        \"--fit-mode\", \"uniform\",\n        \"--set-work-zero\",\n        \"--unlock\"\n    ].join(\" \")\n};\n\nreturn [null, execMsg];",
-        "outputs": 2,
-        "timeout": 0,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 200,
-        "y": 1100,
-        "wires": [
-            [
-                "414875922b7d6e4e"
-            ],
-            [
-                "801bdcf8fec24aa6"
-            ]
-        ],
-        "outputLabels": [
-            "5006",
-            "exec filmic"
-        ]
-    },
-    {
-        "id": "801bdcf8fec24aa6",
-        "type": "exec",
-        "z": "fbdc5aeae38a6415",
-        "command": "/home/pi/Documents/GitHub/contraespacios/Filmic/.venv/bin/python3 /home/pi/Documents/GitHub/contraespacios/Filmic/execute_drawing.py",
-        "addpay": "payload",
-        "append": "",
-        "useSpawn": "true",
-        "timer": "",
-        "winHide": false,
-        "oldrc": false,
-        "name": "",
-        "x": 870,
-        "y": 1120,
-        "wires": [
-            [
-                "cd54b804694ba088"
-            ],
-            [
-                "b0ae2bd80390c045"
-            ],
-            [
-                "f0c0de_execute_rc"
-            ]
-        ]
-    },
-    {
-        "id": "cd54b804694ba088",
-        "type": "function",
-        "z": "fbdc5aeae38a6415",
-        "name": "resultado_execute_drawing",
-        "func": "// resultado_execute_drawing\n// Procesa JSONL emitido por Filmic\n\nlet lines = [];\n\nif (typeof msg.payload === \"string\") {\n    lines = msg.payload.split(/\\r?\\n/).filter(Boolean);\n} else {\n    lines = [JSON.stringify(msg.payload)];\n}\n\nlet last = null;\n\nfor (const line of lines) {\n    try {\n        last = JSON.parse(line);\n    } catch (err) {\n        node.warn(\"Linea no JSON desde Filmic: \" + line);\n    }\n}\n\nif (!last) {\n    return null;\n}\n\nconst sessionId =\n    last.session_id ||\n    msg.session_id ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nif (last.type === \"execute_progress\") {\n    msg.payload = JSON.stringify({\n        type: \"status\",\n        session_id: sessionId,\n        step: last.step || \"execute\",\n        state: last.state || \"running\",\n        message: last.message || \"Ejecutando\",\n        progress: last.progress || 0\n    });\n\n    msg.ip = \"127.0.0.1\";\n    msg.host = \"127.0.0.1\";\n    msg.port = 5006;\n\n    return msg;\n}\n\nif (last.ok === true && last.type === \"execute_result\") {\n    flow.set(\"execution_busy\", false);\nflow.set(\"execution_started_at\", 0);\n    flow.set(\"execution_done\", true);\n    flow.set(\"drawing_executed\", true);\n\n    msg.payload = JSON.stringify({\n        type: \"framework_state\",\n        session_id: sessionId,\n\n        drawing_executed: true,\n        execution_done: true,\n        executed: true,\n\n        screen: \"status\",\n        command: \"show_status\",\n\n        step: \"execute\",\n        state: \"done\",\n        message: \"Dibujo ejecutado\",\n        progress: 100,\n\n        calibration: last.calibration || null\n    });\n\n    msg.ip = \"127.0.0.1\";\n    msg.host = \"127.0.0.1\";\n    msg.port = 5006;\n\n    node.status({\n        fill: \"green\",\n        shape: \"dot\",\n        text: `${sessionId} ejecutado`\n    });\n\n    return msg;\n}\n\nif (last.ok === false) {\n    flow.set(\"execution_busy\", false);\nflow.set(\"execution_started_at\", 0);\n    flow.set(\"execution_done\", false);\n    flow.set(\"drawing_executed\", false);\n\n    msg.payload = JSON.stringify({\n        type: \"status\",\n        session_id: sessionId,\n        step: \"execute\",\n        state: \"error\",\n        message: last.message || last.error || \"Error ejecución\",\n        screen: \"status\",\n        command: \"show_status\"\n    });\n\n    msg.ip = \"127.0.0.1\";\n    msg.host = \"127.0.0.1\";\n    msg.port = 5006;\n\n    node.status({\n        fill: \"red\",\n        shape: \"ring\",\n        text: `${sessionId} error ejecución`\n    });\n\n    return msg;\n}\n\nreturn null;",
-        "outputs": 1,
-        "timeout": 0,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1580,
-        "y": 1100,
-        "wires": [
-            [
-                "414875922b7d6e4e"
-            ]
-        ]
-    },
-    {
-        "id": "b0ae2bd80390c045",
-        "type": "function",
-        "z": "fbdc5aeae38a6415",
-        "name": "error_execute_drawing",
-        "func": "// error_execute_drawing\n\nflow.set(\"execution_busy\", false);\nflow.set(\"execution_started_at\", 0);\nflow.set(\"execution_done\", false);\nflow.set(\"drawing_executed\", false);\n\nconst sessionId =\n    msg.session_id ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nconst errorText =\n    typeof msg.payload === \"string\"\n        ? msg.payload\n        : JSON.stringify(msg.payload);\n\nnode.warn(errorText);\n\nmsg.payload = JSON.stringify({\n    type: \"status\",\n    session_id: sessionId,\n    step: \"execute\",\n    state: \"error\",\n    message: errorText.slice(0, 40),\n    screen: \"status\",\n    command: \"show_status\"\n});\n\nmsg.ip = \"127.0.0.1\";\nmsg.host = \"127.0.0.1\";\nmsg.port = 5006;\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": 0,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1560,
-        "y": 1140,
-        "wires": [
-            [
-                "414875922b7d6e4e"
-            ]
-        ]
-    },
-    {
-        "id": "f0c0de_execute_rc",
-        "type": "function",
-        "z": "fbdc5aeae38a6415",
-        "name": "fin_execute_drawing",
-        "func": "// fin_execute_drawing\n// Tercer output del exec Filmic: código de salida.\n\nlet rc = null;\n\nif (typeof msg.payload === \"number\") {\n    rc = msg.payload;\n} else if (typeof msg.payload === \"string\" && msg.payload.trim() !== \"\") {\n    rc = Number(msg.payload.trim());\n} else if (msg.payload && typeof msg.payload === \"object\") {\n    rc = Number(\n        msg.payload.code ??\n        msg.payload.rc ??\n        msg.payload.returnCode ??\n        msg.payload.exitCode\n    );\n}\n\n// Si terminó bien, resultado_execute_drawing ya limpió estado y avisó a OLED.\nif (rc === 0) {\n    return null;\n}\n\nflow.set(\"execution_busy\", false);\nflow.set(\"execution_started_at\", 0);\nflow.set(\"execution_done\", false);\nflow.set(\"drawing_executed\", false);\n\nconst sessionId =\n    msg.session_id ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nconst shown = Number.isFinite(rc) ? `Filmic salio con codigo ${rc}` : \"Filmic termino con error\";\n\nmsg.payload = JSON.stringify({\n    type: \"status\",\n    session_id: sessionId,\n    step: \"execute\",\n    state: \"error\",\n    message: shown,\n    screen: \"status\",\n    command: \"show_status\"\n});\n\nmsg.ip = \"127.0.0.1\";\nmsg.host = \"127.0.0.1\";\nmsg.port = 5006;\n\nnode.status({\n    fill: \"red\",\n    shape: \"ring\",\n    text: shown\n});\n\nreturn msg;",
-        "outputs": 1,
-        "timeout": 0,
-        "noerr": 0,
-        "initialize": "",
-        "finalize": "",
-        "libs": [],
-        "x": 1560,
-        "y": 1180,
         "wires": [
             [
                 "414875922b7d6e4e"

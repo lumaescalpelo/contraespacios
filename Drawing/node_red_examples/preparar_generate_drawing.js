@@ -1,18 +1,11 @@
 const p = msg.payload || {};
 const sessionId = p.session_id || p.active_session || flow.get("active_session") || "S01";
 flow.set("active_session", sessionId);
-flow.set("drawing_busy", true);
-flow.set("drawing_session", sessionId);
 msg.session_id = sessionId;
 msg.payload = [
   "--session", sessionId,
   "--data-root", "/home/pi/data",
   "--film-width-mm", "30",
-  "--film-height-mm", "32",
-  "--gcode-y-mode", "direct",
-  "--path-start-corner", "top_right",
-  "--landscape-bands", "4",
-  "--internal-lines", "3",
-  "--max-contours", "4"
+  "--film-height-mm", "32"
 ].join(" ");
 return msg;
