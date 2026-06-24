@@ -472,7 +472,7 @@ En Node-RED:
 | `mqtt in` | Broker: Raspberry Pi / Topic: `ambiente/lectura` |
 | `json` | Convierte payload a objeto |
 | `function` | Limpia, guarda o transforma datos |
-| `mysql` | Guarda datos en base de datos, si aplica |
+| `file` | Guarda lecturas JSON en `/home/pi/data/sessions/<SESSION_ID>/environment/` |
 | `dashboard` | Muestra datos en interfaz, si aplica |
 
 ---
@@ -489,10 +489,9 @@ ESP32CAM / ContraCam
 Raspberry Pi / Node-RED
     │
     ├── guarda foto JPG
-    ├── lee datos ambientales por MQTT
-    ├── genera SVG
-    ├── genera G-code
-    └── manda G-code a GRBL
+    ├── guarda lecturas ambientales como JSON
+    ├── ejecuta Drawing para generar SVG/G-code
+    └── ejecuta Filmic para mandar G-code a GRBL
 
 ESP32 DevKit + ENS160/AHT21
     │

@@ -1,45 +1,40 @@
-# Contra Espacios · Drawing v4 con pasos de proceso
+# Drawing
 
-Esta versión genera el dibujo SVG, el G-code para GRBL y además guarda una carpeta con los pasos intermedios del proceso para poder entender cómo se transforma la imagen.
+Motor de generación de dibujo para Contra Espacios.
 
-La corrección importante de esta versión es que `process_steps.py` ya no tiene el error de sintaxis en la escritura de `README_steps.txt`. Sí, un salto de línea mal escapado tumbó todo el motor, porque Python también tiene sus berrinches miniatura.
+`Drawing` hace:
 
-Esta variante está ajustada para el área de dibujo actual:
+```text
+leer fotos y lecturas ambientales
+generar drawing.svg
+generar preview.png
+generar process_steps/
+generar drawing.gcode
+responder JSON para Node-RED/OLED
+```
+
+`Drawing` no se conecta con GRBL y no mueve motores. La ejecución física la hace `Filmic`.
+
+## Área Actual
 
 ```text
 30 mm x 32 mm
 ```
 
-El cambio está aplicado como valor por defecto en `drawing_config.py` y en los argumentos por defecto de `generate_drawing.py`. Si Node-RED ya ejecuta el script sin pasar `--film-width-mm` ni `--film-height-mm`, no hay que cambiar el flujo. Si tu nodo sí manda esas opciones explícitamente, deben quedar como:
+Los valores por defecto están en:
+
+```text
+drawing_config.py
+generate_drawing.py
+```
+
+Si hace falta pasarlos explícitamente:
 
 ```text
 --film-width-mm 30 --film-height-mm 32
 ```
 
-El G-code se guarda como:
-
-```text
-/home/pi/data/sessions/S01/output/drawing.gcode
-```
-
-Esta versión solo genera el archivo. La ejecución física se hará en el siguiente paso desde `Ejecutar dibujo`.
-
-Para ejecutar con homing, la lógica recomendada será:
-
-```text
-Ejecutar dibujo
-→ mandar $H a GRBL
-→ establecer el cero de trabajo después del homing
-→ transmitir drawing.gcode
-```
-
-No se usa origen manual en esta etapa.
-
----
-
-## 0. Comando rápido de instalación limpia
-
-Ejecuta esto dentro de la Raspberry:
+## Instalar
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/Drawing
@@ -52,7 +47,6 @@ sudo apt install -y \
   python3-numpy \
   python3-pil
 
-rm -rf .venv
 python3 -m venv --system-site-packages .venv
 source .venv/bin/activate
 
@@ -60,40 +54,32 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-El archivo `requirements.txt` solo debe contener:
+`requirements.txt`:
 
 ```text
 svgwrite
 ```
 
-OpenCV, NumPy y Pillow se instalan con `apt`, porque en Raspberry Pi eso suele ser más estable que pedirle a `pip` que compile medio planeta.
+## Entrada De Datos
 
----
-
-## 1. Estructura esperada
-
-El script lee una sesión guardada en:
+El script lee sesiones desde:
 
 ```text
-/home/pi/data/sessions/S01/
+/home/pi/data/sessions/<SESSION_ID>/
 ```
 
-La sesión debe tener:
+Ejemplo:
 
 ```text
 /home/pi/data/sessions/S01/
 ├── photos/
-│   ├── photo_001_....jpg
-│   └── photo_002_....jpg
 ├── environment/
-│   ├── env_001_....json
-│   └── env_002_....json
 └── output/
 ```
 
-Las fotos deben ser JPEG válidos.
+Las fotos deben ser JPEG válidos dentro de `photos/`.
 
-Las lecturas ambientales deben ser válidas y completas, por ejemplo:
+Las lecturas ambientales deben ser JSON válidos dentro de `environment/`, por ejemplo:
 
 ```json
 {
@@ -108,13 +94,7 @@ Las lecturas ambientales deben ser válidas y completas, por ejemplo:
 }
 ```
 
-Si una lectura tiene `null`, no debería llegar hasta este motor. Node-RED ya está filtrando esas porquerías con admirable severidad.
-
----
-
-## 2. Comando recomendado para probar
-
-Este es el preset base que te recomiendo para revisar la versión diagnóstica:
+## Generar Dibujo
 
 ```bash
 cd ~/Documents/GitHub/contraespacios/Drawing
@@ -128,62 +108,29 @@ python3 generate_drawing.py \
   --max-contours 4
 ```
 
-Si quieres un resultado más limpio:
-
-```bash
-python3 generate_drawing.py \
-  --session S01 \
-  --data-root /home/pi/data \
-  --landscape-bands 3 \
-  --internal-lines 2 \
-  --max-contours 3
-```
-
-Si quieres un resultado con más información:
-
-```bash
-python3 generate_drawing.py \
-  --session S01 \
-  --data-root /home/pi/data \
-  --landscape-bands 5 \
-  --internal-lines 4 \
-  --max-contours 5
-```
-
----
-
-## 3. Salidas generadas
-
-Después de correr el script, revisa:
-
-```bash
-ls -lh /home/pi/data/sessions/S01/output/
-```
-
-Deberías ver:
+## Salidas
 
 ```text
-drawing.svg
-drawing.gcode
-preview.png
-metadata.json
-generation_log.json
-process_steps/
+/home/pi/data/sessions/<SESSION_ID>/output/
+├── drawing.svg
+├── drawing.gcode
+├── preview.png
+├── metadata.json
+├── generation_log.json
+└── process_steps/
 ```
 
-`drawing.gcode` usa milímetros, coordenadas absolutas y está pensado para GRBL. El archivo no manda `$H` por sí mismo para mantenerlo como G-code limpio; el homing debe hacerlo el flujo de ejecución antes de transmitirlo.
+`drawing.gcode` usa milímetros y coordenadas absolutas. No incluye `$H`. El homing lo hace `Filmic` antes de transmitir el archivo.
 
----
+## process_steps
 
-## 4. Carpeta `process_steps`
-
-La carpeta de diagnóstico queda en:
+La carpeta:
 
 ```text
-/home/pi/data/sessions/S01/output/process_steps/
+/home/pi/data/sessions/<SESSION_ID>/output/process_steps/
 ```
 
-Contiene:
+incluye imágenes y JSON secuenciales para entender cómo se transformó la foto:
 
 ```text
 00_manifest.json
@@ -202,56 +149,9 @@ Contiene:
 README_steps.txt
 ```
 
-### Qué significa cada archivo
+## Respuesta JSON
 
-| Archivo | Qué muestra |
-|---|---|
-| `01_source_photos_contact_sheet.png` | Hoja de contacto con las fotos usadas |
-| `02_session_summary.json` | Resumen de fotos y lecturas usadas |
-| `03_environment_summary.json` | Promedios ambientales y parámetros visuales derivados |
-| `04_composite_gray.png` | Composición en gris hecha con las fotos |
-| `05_smoothed.png` | Imagen suavizada antes de simplificar formas |
-| `06_quantized.png` | Imagen reducida a pocos niveles tonales |
-| `07_contours_overlay.png` | Contornos detectados sobre la imagen |
-| `08_landscape_bands_preview.png` | Solo las bandas de paisaje |
-| `09_internal_lines_preview.png` | Solo las líneas internas |
-| `10_contour_paths_preview.png` | Solo trayectorias de contorno |
-| `11_final_ordered_paths_preview.png` | Recorrido final continuo |
-| `12_path_groups_metadata.json` | Conteos y metadatos de las trayectorias |
-
----
-
-## 5. Ver resultados desde terminal
-
-Para listar los pasos:
-
-```bash
-ls -lh /home/pi/data/sessions/S01/output/process_steps/
-```
-
-Para abrir la carpeta desde escritorio:
-
-```bash
-xdg-open /home/pi/data/sessions/S01/output/process_steps/
-```
-
-Para ver el preview final:
-
-```bash
-xdg-open /home/pi/data/sessions/S01/output/preview.png
-```
-
-Para ver el SVG:
-
-```bash
-xdg-open /home/pi/data/sessions/S01/output/drawing.svg
-```
-
----
-
-## 6. Cómo saber si corrió bien
-
-La terminal debe imprimir un JSON parecido a:
+Al terminar imprime algo como:
 
 ```json
 {
@@ -266,68 +166,49 @@ La terminal debe imprimir un JSON parecido a:
   "session_has_gcode": true,
   "metadata": "/home/pi/data/sessions/S01/output/metadata.json",
   "generation_log": "/home/pi/data/sessions/S01/output/generation_log.json",
-  "process_steps_dir": "/home/pi/data/sessions/S01/output/process_steps",
-  "process_manifest": "/home/pi/data/sessions/S01/output/process_steps/00_manifest.json"
+  "process_steps_dir": "/home/pi/data/sessions/S01/output/process_steps"
 }
 ```
 
-Si `ok` es `true`, el dibujo y los pasos están listos.
+Node-RED usa esa respuesta para actualizar:
 
----
-
-## 7. Si vuelve a fallar
-
-Primero revisa sintaxis:
-
-```bash
-cd ~/Documents/GitHub/contraespacios/Drawing
-source .venv/bin/activate
-python3 -m py_compile *.py
+```text
+Dib: OK
+G: OK
+F: número de fotos
+A: número de lecturas ambientales
 ```
 
-Si eso no imprime nada, la sintaxis está bien.
+## Node-RED
 
-Luego corre:
-
-```bash
-python3 generate_drawing.py --session S01 --data-root /home/pi/data
-```
-
-Si falla, copia el error completo. Sí, completo. Los errores recortados son como mapas sin norte, muy poéticos y absolutamente inútiles.
-
----
-
-## 8. Integración con Node-RED
-
-El nodo `exec` puede seguir usando:
+Nodo `exec`:
 
 ```text
 /home/pi/Documents/GitHub/contraespacios/Drawing/.venv/bin/python /home/pi/Documents/GitHub/contraespacios/Drawing/generate_drawing.py
 ```
 
-Con `Append msg.payload` activado.
+Activar:
 
-El Function anterior puede mandar:
+```text
+Append msg.payload
+```
+
+Argumentos típicos:
 
 ```text
 --session S01 --data-root /home/pi/data --landscape-bands 4 --internal-lines 3 --max-contours 4
 ```
 
-El JSON de salida ahora también incluye:
+Ejemplos:
 
-```json
-{
-  "gcode": "/home/pi/data/sessions/S01/output/drawing.gcode",
-  "gcode_done": true,
-  "session_has_gcode": true,
-  "process_steps_dir": "/home/pi/data/sessions/S01/output/process_steps",
-  "process_manifest": "/home/pi/data/sessions/S01/output/process_steps/00_manifest.json"
-}
+```text
+node_red_examples/preparar_generate_drawing.js
+node_red_examples/procesar_resultado_drawing.js
 ```
 
-## 9. Git
+## Git
 
-Esta carpeta incluye un `.gitignore` para evitar subir archivos temporales:
+Esta carpeta ignora:
 
 ```text
 .venv/
@@ -339,5 +220,3 @@ metadata.json
 generation_log.json
 process_steps/
 ```
-
-Con eso no deberías tener que resetear el `HEAD` por cachés de Python o salidas generadas localmente.
