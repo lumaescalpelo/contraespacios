@@ -805,7 +805,9 @@
             [
                 "b0ae2bd80390c045"
             ],
-            []
+            [
+                "f0c0de_execute_rc"
+            ]
         ]
     },
     {
@@ -842,6 +844,26 @@
         "libs": [],
         "x": 1560,
         "y": 1140,
+        "wires": [
+            [
+                "414875922b7d6e4e"
+            ]
+        ]
+    },
+    {
+        "id": "f0c0de_execute_rc",
+        "type": "function",
+        "z": "fbdc5aeae38a6415",
+        "name": "fin_execute_drawing",
+        "func": "// fin_execute_drawing\n// Tercer output del exec Filmic: código de salida.\n\nlet rc = null;\n\nif (typeof msg.payload === \"number\") {\n    rc = msg.payload;\n} else if (typeof msg.payload === \"string\" && msg.payload.trim() !== \"\") {\n    rc = Number(msg.payload.trim());\n} else if (msg.payload && typeof msg.payload === \"object\") {\n    rc = Number(\n        msg.payload.code ??\n        msg.payload.rc ??\n        msg.payload.returnCode ??\n        msg.payload.exitCode\n    );\n}\n\n// Si terminó bien, resultado_execute_drawing ya limpió estado y avisó a OLED.\nif (rc === 0) {\n    return null;\n}\n\nflow.set(\"execution_busy\", false);\nflow.set(\"execution_started_at\", 0);\nflow.set(\"execution_done\", false);\nflow.set(\"drawing_executed\", false);\n\nconst sessionId =\n    msg.session_id ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nconst shown = Number.isFinite(rc) ? `Filmic salio con codigo ${rc}` : \"Filmic termino con error\";\n\nmsg.payload = JSON.stringify({\n    type: \"status\",\n    session_id: sessionId,\n    step: \"execute\",\n    state: \"error\",\n    message: shown,\n    screen: \"status\",\n    command: \"show_status\"\n});\n\nmsg.ip = \"127.0.0.1\";\nmsg.host = \"127.0.0.1\";\nmsg.port = 5006;\n\nnode.status({\n    fill: \"red\",\n    shape: \"ring\",\n    text: shown\n});\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1560,
+        "y": 1180,
         "wires": [
             [
                 "414875922b7d6e4e"

@@ -6,8 +6,14 @@ import sys
 import time
 from pathlib import Path
 
-import serial
-from serial.tools import list_ports
+try:
+    import serial
+    from serial.tools import list_ports
+    SERIAL_IMPORT_ERROR = None
+except Exception as exc:
+    serial = None
+    list_ports = None
+    SERIAL_IMPORT_ERROR = exc
 
 
 def emit(**data):
@@ -559,6 +565,13 @@ def calibrate_area(ser, args):
 
 
 def run(args):
+    if SERIAL_IMPORT_ERROR is not None:
+        raise RuntimeError(
+            "No se pudo importar pyserial. Instala dependencias en Filmic con: "
+            "python3 -m pip install -r requirements.txt. "
+            f"Detalle: {SERIAL_IMPORT_ERROR}"
+        )
+
     gcode_path = Path(args.gcode).expanduser() if args.gcode else default_gcode_path(args.data_root, args.session)
 
     if not gcode_path.exists():
