@@ -203,6 +203,24 @@ def send_and_wait_idle(ser, command, timeout=30.0):
     return response, seen, status
 
 
+def try_motion_and_status(ser, command, axis, timeout=10.0):
+    """Mueve un paso de calibración y devuelve estado, incluso si GRBL alarma al tocar límite."""
+    try:
+        send_and_wait_idle(ser, command, timeout=timeout)
+        return read_status(ser), None
+    except RuntimeError as exc:
+        status = None
+        try:
+            status = read_status(ser)
+        except Exception:
+            pass
+
+        if status and axis in status["pins"]:
+            return status, exc
+
+        raise
+
+
 def wait_for_startup(ser, timeout=4.0):
     deadline = time.time() + float(timeout)
     startup = []
@@ -331,13 +349,27 @@ def scan_axis_until_limit(ser, axis, direction, args):
     send_command(ser, "G91", timeout=5.0)
 
     while abs(total) < max_mm:
-        send_and_wait_idle(ser, f"G0 {axis}{step:.4f} F{feed:.4f}", timeout=10.0)
-        total += step
-
         status = read_status(ser)
         if axis in status["pins"]:
             travel = abs(total)
+            send_command(ser, "G90", timeout=5.0)
+            return travel, status
+
+        status, alarm = try_motion_and_status(
+            ser,
+            f"G0 {axis}{step:.4f} F{feed:.4f}",
+            axis,
+            timeout=10.0,
+        )
+        total += step
+
+        if axis in status["pins"]:
+            travel = abs(total)
             backoff = -sign * abs(float(args.calibration_backoff_mm))
+
+            if alarm is not None:
+                send_command(ser, "$X", timeout=5.0)
+
             send_and_wait_idle(ser, f"G0 {axis}{backoff:.4f} F{feed:.4f}", timeout=10.0)
             send_command(ser, "G90", timeout=5.0)
             return travel, status
@@ -435,13 +467,12 @@ def run(args):
             emit(ok=True, type="execute_progress", session_id=args.session, step="execute", state="unlocking", progress=1, message="Desbloqueando")
             send_command(ser, "$X", timeout=5.0)
 
-        if args.homing:
-            emit(ok=True, type="execute_progress", session_id=args.session, step="execute", state="homing", progress=3, message="Homing")
-            send_command(ser, "$H", timeout=args.homing_timeout)
-
         calibration = None
         if args.calibrate_area:
             calibration = calibrate_area(ser, args)
+        elif args.homing:
+            emit(ok=True, type="execute_progress", session_id=args.session, step="execute", state="homing", progress=3, message="Homing")
+            send_command(ser, "$H", timeout=args.homing_timeout)
 
         width = float(args.work_width_mm)
         height = float(args.work_height_mm)
@@ -508,7 +539,7 @@ def parse_args():
     p.add_argument("--calibration-max-x-mm", type=float, default=200.0)
     p.add_argument("--calibration-max-y-mm", type=float, default=200.0)
     p.add_argument("--calibrate-x-dir", type=int, choices=(-1, 1), default=1)
-    p.add_argument("--calibrate-y-dir", type=int, choices=(-1, 1), default=1)
+    p.add_argument("--calibrate-y-dir", type=int, choices=(-1, 1), default=-1)
     p.add_argument("--home-corner", default="top_left")
     p.add_argument("--work-width-mm", type=float, default=0.0)
     p.add_argument("--work-height-mm", type=float, default=0.0)

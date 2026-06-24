@@ -12,6 +12,10 @@ msg.payload = [
   "--data-root", "/home/pi/data",
   "--homing",
   "--calibrate-area",
+  "--calibrate-x-dir", "1",
+  "--calibrate-y-dir", "-1",
+  "--calibration-step-mm", "1",
+  "--calibration-backoff-mm", "5",
   "--set-work-zero",
   "--unlock"
 ].join(" ");
