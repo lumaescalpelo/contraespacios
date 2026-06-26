@@ -69,9 +69,6 @@ def make_gcode(paths, config, feed_mm_min=300.0, seek_mm_min=600.0):
             move_count += 1
 
     lines.extend([
-        "M5",
-        "M9",
-        "M2",
         "",
     ])
 

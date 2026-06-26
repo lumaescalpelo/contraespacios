@@ -253,7 +253,7 @@
         "type": "function",
         "z": "fbdc5aeae38a6415",
         "name": "execute_drawing",
-        "func": "msg.payload = msg.payload.command;\nreturn msg;",
+        "func": "// execute_drawing\n// Conserva la sesión activa y prepara el comando para Filmic.\n// Este nodo reemplaza el placeholder anterior.\n\nconst input = msg.payload || {};\n\nconst sessionId =\n    input.session_id ||\n    input.active_session ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nconst hasDrawing =\n    input.session_has_drawing === true ||\n    flow.get(\"session_has_drawing\") === true ||\n    flow.get(\"drawing_done\") === true;\n\nflow.set(\"active_session\", sessionId);\n\nmsg.payload = {\n    type: \"command\",\n    command: \"execute_drawing\",\n    session_id: sessionId,\n    active_session: sessionId,\n    session_has_drawing: hasDrawing\n};\n\nnode.status({\n    fill: \"blue\",\n    shape: \"dot\",\n    text: `ejecutar ${sessionId}`\n});\n\nreturn msg;",
         "outputs": 1,
         "timeout": 0,
         "noerr": 0,
@@ -264,7 +264,8 @@
         "y": 400,
         "wires": [
             [
-                "f7545f5fc5ed5d01"
+                "f7545f5fc5ed5d01",
+                "422efec5b2d81aa6"
             ]
         ]
     },
@@ -300,8 +301,8 @@
         "complete": "false",
         "statusVal": "",
         "statusType": "auto",
-        "x": 1400,
-        "y": 520,
+        "x": 1660,
+        "y": 1260,
         "wires": []
     },
     {
@@ -355,7 +356,7 @@
         "name": "",
         "filename": "filename",
         "filenameType": "msg",
-        "appendNewline": true,
+        "appendNewline": false,
         "createDir": true,
         "overwriteFile": "true",
         "encoding": "none",
@@ -633,9 +634,7 @@
         "x": 1110,
         "y": 660,
         "wires": [
-            [
-                "45cbd856808d32bf"
-            ],
+            [],
             [
                 "414875922b7d6e4e"
             ]
@@ -667,8 +666,8 @@
         "winHide": false,
         "oldrc": false,
         "name": "",
-        "x": 890,
-        "y": 960,
+        "x": 730,
+        "y": 980,
         "wires": [
             [
                 "0ae74d93438faf4a"
@@ -684,7 +683,7 @@
         "type": "function",
         "z": "fbdc5aeae38a6415",
         "name": "preparar_generate_drawing",
-        "func": "// preparar_generate_drawing\n// Salida 1: mensaje inmediato al OLED\n// Salida 2: argumentos para el nodo exec\n\nfunction sh(value) {\n    return \"'\" + String(value).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nif (flow.get(\"drawing_busy\")) {\n    const oledBusy = {\n        payload: JSON.stringify({\n            type: \"oled\",\n            screen: \"drawing_busy\",\n            line1: \"Ya estoy\",\n            line2: \"generando...\"\n        })\n    };\n\n    return [oledBusy, null];\n}\n\nconst input = msg.payload || {};\n\nconst session =\n    input.session_id ||\n    input.session ||\n    flow.get(\"current_session\") ||\n    \"S01\";\n\nflow.set(\"drawing_busy\", true);\nflow.set(\"drawing_session\", session);\n\nconst oledMsg = {\n    payload: JSON.stringify({\n        type: \"oled\",\n        screen: \"drawing_start\",\n        line1: \"Generando\",\n        line2: \"dibujo...\"\n    })\n};\n\nconst execMsg = {\n    payload: [\n        \"--session\", sh(session),\n        \"--data-root\", sh(\"/home/pi/data\"),\n        \"--landscape-bands\", \"4\",\n        \"--internal-lines\", \"3\",\n        \"--max-contours\", \"4\"\n    ].join(\" \")\n};\n\nreturn [oledMsg, execMsg];",
+        "func": "// preparar_generate_drawing\n// Salida 1: mensaje inmediato al OLED\n// Salida 2: argumentos para el nodo exec\n\nfunction sh(value) {\n    return \"'\" + String(value).replace(/'/g, \"'\\\\''\") + \"'\";\n}\n\nif (flow.get(\"drawing_busy\")) {\n    const oledBusy = {\n        payload: JSON.stringify({\n            type: \"oled\",\n            screen: \"drawing_busy\",\n            line1: \"Ya estoy\",\n            line2: \"generando...\"\n        })\n    };\n\n    return [oledBusy, null];\n}\n\nconst input = msg.payload || {};\n\nconst session =\n    input.session_id ||\n    input.session ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nflow.set(\"drawing_busy\", true);\nflow.set(\"drawing_session\", session);\n\nconst oledMsg = {\n    payload: JSON.stringify({\n        type: \"oled\",\n        screen: \"drawing_start\",\n        line1: \"Generando\",\n        line2: \"dibujo...\"\n    })\n};\n\nconst execMsg = {\n    payload: [\n        \"--session\", sh(session),\n        \"--data-root\", sh(\"/home/pi/data\"),\n        \"--landscape-bands\", \"4\",\n        \"--internal-lines\", \"3\",\n        \"--max-contours\", \"4\"\n    ].join(\" \")\n};\n\nreturn [oledMsg, execMsg];",
         "outputs": 2,
         "timeout": 0,
         "noerr": 0,
@@ -718,8 +717,8 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1560,
-        "y": 920,
+        "x": 1400,
+        "y": 940,
         "wires": [
             [
                 "414875922b7d6e4e"
@@ -738,11 +737,138 @@
         "initialize": "",
         "finalize": "",
         "libs": [],
-        "x": 1550,
+        "x": 1390,
         "y": 980,
         "wires": [
             [
                 "414875922b7d6e4e"
+            ]
+        ]
+    },
+    {
+        "id": "06ea9da1c7269828",
+        "type": "comment",
+        "z": "fbdc5aeae38a6415",
+        "name": "Dibujar dibujo",
+        "info": "",
+        "x": 150,
+        "y": 1040,
+        "wires": []
+    },
+    {
+        "id": "422efec5b2d81aa6",
+        "type": "function",
+        "z": "fbdc5aeae38a6415",
+        "name": "preparar_execute_drawing",
+        "func": "// preparar_execute_drawing\n// Salida 1: mensaje inmediato a OLED\n// Salida 2: argumentos para ejecutar Filmic/execute_drawing.py\n\nif (flow.get(\"execution_busy\")) {\n    var busyMsg = {\n        payload: JSON.stringify({\n            type: \"status\",\n            session_id: flow.get(\"execution_session\") || flow.get(\"active_session\") || \"S01\",\n            step: \"execute\",\n            state: \"running\",\n            message: \"Ya esta dibujando\",\n            progress: flow.get(\"execution_progress\") || 0\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    };\n\n    return [busyMsg, null];\n}\n\nvar input = msg.payload || {};\n\nvar sessionId =\n    input.session_id ||\n    input.active_session ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\n// Limpieza simple por si llega con espacios raros\nsessionId = String(sessionId).trim();\n\nflow.set(\"active_session\", sessionId);\nflow.set(\"execution_busy\", true);\nflow.set(\"execution_session\", sessionId);\nflow.set(\"execution_progress\", 0);\nflow.set(\"execution_had_error\", false);\n\n// ----------------------------------------------------\n// Ajustes de prueba\n// ----------------------------------------------------\n\n// PRUEBA SEGURA:\n// usa /dev/ttyFAKE para confirmar que Node-RED ya encuentra el G-code.\n// Si funciona, el error debe cambiar a \"could not open port /dev/ttyFAKE\".\n//var SERIAL_PORT = \"/dev/ttyFAKE\";\n\n// Cuando ya pase la prueba, cambia SERIAL_PORT a:\nvar SERIAL_PORT = \"/dev/ttyACM0\";\n\n// Si todavía no quieres hacer homing físico, usa false.\n// Para la prueba con /dev/ttyFAKE no importa mucho, porque no va a abrir puerto.\nvar USE_HOMING = true;\n\n// En general no desbloqueamos a ciegas.\nvar USE_UNLOCK = false;\n\n// ----------------------------------------------------\n// Rutas explícitas\n// ----------------------------------------------------\n\nvar DATA_ROOT = \"/home/pi/data\";\nvar GCODE_PATH = DATA_ROOT + \"/sessions/\" + sessionId + \"/output/drawing.gcode\";\n\n// Importante:\n// No usamos comillas simples aquí.\n// Con useSpawn, las comillas pueden terminar pasando como texto literal.\nvar args = [\n    \"--session\", sessionId,\n    \"--data-root\", DATA_ROOT,\n    \"--gcode\", GCODE_PATH,\n    \"--baud\", \"115200\",\n    \"--startup-delay\", \"2\",\n    \"--homing-timeout\", \"60\",\n    \"--set-work-zero\"\n];\n\nif (USE_HOMING) {\n    args.push(\"--homing\");\n} else {\n    args.push(\"--no-homing\");\n}\n\nif (USE_UNLOCK) {\n    args.push(\"--unlock\");\n}\n\nif (SERIAL_PORT && SERIAL_PORT.trim() !== \"\") {\n    args.push(\"--port\", SERIAL_PORT.trim());\n}\n\nvar oledMsg = {\n    payload: JSON.stringify({\n        type: \"status\",\n        session_id: sessionId,\n        step: \"execute\",\n        state: \"running\",\n        message: \"Iniciando dibujo\",\n        progress: 0,\n        session_has_drawing: true\n    }),\n    ip: \"127.0.0.1\",\n    host: \"127.0.0.1\",\n    port: 5006\n};\n\nvar execMsg = {\n    payload: args.join(\" \"),\n    session_id: sessionId,\n    gcode_path: GCODE_PATH\n};\n\nnode.status({\n    fill: \"yellow\",\n    shape: \"dot\",\n    text: \"Film \" + sessionId\n});\n\nreturn [oledMsg, execMsg];",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 200,
+        "y": 1100,
+        "wires": [
+            [
+                "414875922b7d6e4e"
+            ],
+            [
+                "f92680a2830e27e4",
+                "45cbd856808d32bf"
+            ]
+        ],
+        "outputLabels": [
+            "5006",
+            "filmic"
+        ]
+    },
+    {
+        "id": "f92680a2830e27e4",
+        "type": "exec",
+        "z": "fbdc5aeae38a6415",
+        "command": "/home/pi/Documents/GitHub/contraespacios/Filmic/.venv/bin/python3 -u /home/pi/Documents/GitHub/contraespacios/Filmic/execute_drawing.py",
+        "addpay": "payload",
+        "append": "",
+        "useSpawn": "true",
+        "timer": "",
+        "winHide": false,
+        "oldrc": false,
+        "name": "",
+        "x": 720,
+        "y": 1180,
+        "wires": [
+            [
+                "7f79dcb4004e8536"
+            ],
+            [
+                "cd767522788754d6"
+            ],
+            [
+                "d9d83eb25946c69f"
+            ]
+        ]
+    },
+    {
+        "id": "7f79dcb4004e8536",
+        "type": "function",
+        "z": "fbdc5aeae38a6415",
+        "name": "procesar_stdout_execute",
+        "func": "// procesar_stdout_execute\n// Procesa las lineas JSON que Filmic imprime por stdout.\n// Filmic debe emitir lineas tipo execute_progress y execute_result.\n\nvar text = \"\";\n\nif (typeof Buffer !== \"undefined\" && Buffer.isBuffer(msg.payload)) {\n    text = msg.payload.toString(\"utf8\");\n} else {\n    text = String(msg.payload || \"\");\n}\n\n// Con useSpawn puede llegar una linea completa, varias lineas,\n// o media linea. Guardamos buffer para no romper JSON.\nvar buffer = context.get(\"buffer\") || \"\";\ntext = buffer + text;\n\nvar lines = text.split(/\\r?\\n/);\ncontext.set(\"buffer\", lines.pop() || \"\");\n\nvar out = [];\n\nfor (var i = 0; i < lines.length; i++) {\n    var line = String(lines[i] || \"\").trim();\n\n    if (!line) {\n        continue;\n    }\n\n    var data = {};\n\n    try {\n        data = JSON.parse(line);\n    } catch (err) {\n        node.warn(\"stdout no JSON: \" + line);\n        continue;\n    }\n\n    var sessionId =\n        data.session_id ||\n        msg.session_id ||\n        flow.get(\"execution_session\") ||\n        flow.get(\"active_session\") ||\n        \"S01\";\n\n    var progress = parseInt(data.progress || 0, 10);\n\n    if (isNaN(progress)) {\n        progress = 0;\n    }\n\n    progress = Math.max(0, Math.min(100, progress));\n\n    flow.set(\"execution_progress\", progress);\n\n    // Error reportado por Filmic\n    if (data.ok === false || data.state === \"error\") {\n        flow.set(\"execution_busy\", false);\n        flow.set(\"executed_done\", false);\n        flow.set(\"execution_had_error\", true);\n\n        out.push({\n            payload: JSON.stringify({\n                type: \"status\",\n                session_id: sessionId,\n                step: \"execute\",\n                state: \"error\",\n                message: data.message || data.error || \"Error al dibujar\",\n                progress: progress,\n                drawing: true,\n                drawing_done: true,\n                gcode_done: true,\n                executed: false,\n                executed_done: false,\n                session_has_drawing: true\n            }),\n            ip: \"127.0.0.1\",\n            host: \"127.0.0.1\",\n            port: 5006\n        });\n\n        node.status({\n            fill: \"red\",\n            shape: \"ring\",\n            text: \"error \" + sessionId\n        });\n\n        continue;\n    }\n\n    // Resultado final correcto\n    if (data.type === \"execute_result\" && data.state === \"done\") {\n        flow.set(\"execution_busy\", false);\n        flow.set(\"executed_done\", true);\n        flow.set(\"execution_progress\", 100);\n        flow.set(\"execution_had_error\", false);\n\n        out.push({\n            payload: JSON.stringify({\n                type: \"framework_state\",\n                session_id: sessionId,\n                step: \"execute\",\n                state: \"done\",\n                message: data.message || \"Dibujo ejecutado\",\n                progress: 100,\n\n                drawing: true,\n                drawing_done: true,\n                gcode_done: true,\n\n                executed: true,\n                executed_done: true,\n                drawing_executed: true,\n                session_has_drawing: true,\n\n                lines_sent: data.lines_sent || null,\n                serial_port: data.port || null,\n                gcode_path: data.gcode || null\n            }),\n            ip: \"127.0.0.1\",\n            host: \"127.0.0.1\",\n            port: 5006\n        });\n\n        node.status({\n            fill: \"green\",\n            shape: \"dot\",\n            text: sessionId + \" ejecutado\"\n        });\n\n        continue;\n    }\n\n    // Progreso normal mientras dibuja\n    out.push({\n        payload: JSON.stringify({\n            type: \"status\",\n            session_id: sessionId,\n            step: \"execute\",\n            state: data.state || \"running\",\n            message: data.message || \"Dibujando\",\n            progress: progress,\n\n            drawing: true,\n            drawing_done: true,\n            gcode_done: true,\n\n            executed: false,\n            executed_done: false,\n            session_has_drawing: true\n        }),\n        ip: \"127.0.0.1\",\n        host: \"127.0.0.1\",\n        port: 5006\n    });\n\n    node.status({\n        fill: \"yellow\",\n        shape: \"dot\",\n        text: sessionId + \" \" + progress + \"%\"\n    });\n}\n\nif (out.length === 0) {\n    return null;\n}\n\n// Como este nodo tiene 1 salida y puede mandar varios mensajes,\n// se devuelve un arreglo dentro de otro arreglo.\nreturn [out];",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1390,
+        "y": 1120,
+        "wires": [
+            [
+                "414875922b7d6e4e",
+                "45cbd856808d32bf"
+            ]
+        ]
+    },
+    {
+        "id": "cd767522788754d6",
+        "type": "function",
+        "z": "fbdc5aeae38a6415",
+        "name": "procesar_stderr_execute",
+        "func": "// procesar_stderr_execute\n// Maneja stderr del proceso Filmic.\n\nlet errorText = \"\";\n\nif (Buffer.isBuffer(msg.payload)) {\n    errorText = msg.payload.toString(\"utf8\");\n} else {\n    errorText = String(msg.payload || \"\");\n}\n\nerrorText = errorText.trim();\n\nif (!errorText) {\n    return null;\n}\n\nflow.set(\"execution_busy\", false);\nflow.set(\"executed_done\", false);\n\nconst sessionId =\n    msg.session_id ||\n    flow.get(\"execution_session\") ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\nnode.warn(errorText);\n\nnode.status({\n    fill: \"red\",\n    shape: \"ring\",\n    text: \"stderr Filmic\"\n});\n\nmsg.payload = JSON.stringify({\n    type: \"status\",\n    session_id: sessionId,\n    step: \"execute\",\n    state: \"error\",\n    message: errorText.slice(0, 40),\n    progress: flow.get(\"execution_progress\") || 0,\n    executed: false,\n    executed_done: false,\n    session_has_drawing: true\n});\n\nmsg.ip = \"127.0.0.1\";\nmsg.host = \"127.0.0.1\";\nmsg.port = 5006;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1390,
+        "y": 1160,
+        "wires": [
+            [
+                "414875922b7d6e4e",
+                "45cbd856808d32bf"
+            ]
+        ]
+    },
+    {
+        "id": "d9d83eb25946c69f",
+        "type": "function",
+        "z": "fbdc5aeae38a6415",
+        "name": "procesar_cierre_execute",
+        "func": "// procesar_cierre_execute\n// Revisa el codigo de salida del proceso exec.\n// Si stdout/stderr ya reportaron error, no duplica el mensaje.\n\nvar code = 0;\nvar signal = \"\";\n\nif (typeof msg.payload === \"object\" && msg.payload !== null) {\n    code = Number(msg.payload.code || 0);\n    signal = String(msg.payload.signal || \"\");\n} else {\n    code = Number(msg.payload || 0);\n}\n\nvar sessionId =\n    msg.session_id ||\n    flow.get(\"execution_session\") ||\n    flow.get(\"active_session\") ||\n    \"S01\";\n\n// Si el proceso termino bien, stdout ya debio mandar execute_result done.\nif (code === 0 && !signal) {\n    node.status({\n        fill: \"green\",\n        shape: \"dot\",\n        text: \"proceso OK\"\n    });\n\n    return null;\n}\n\n// Si Filmic ya mando un error detallado, no mandamos otro error generico.\nif (flow.get(\"execution_had_error\")) {\n    node.status({\n        fill: \"red\",\n        shape: \"ring\",\n        text: \"error ya reportado\"\n    });\n\n    return null;\n}\n\nflow.set(\"execution_busy\", false);\nflow.set(\"executed_done\", false);\nflow.set(\"execution_had_error\", true);\n\nnode.status({\n    fill: \"red\",\n    shape: \"ring\",\n    text: \"exit \" + (code || signal)\n});\n\nmsg.payload = JSON.stringify({\n    type: \"status\",\n    session_id: sessionId,\n    step: \"execute\",\n    state: \"error\",\n    message: signal ? \"Proceso detenido \" + signal : \"Proceso termino con codigo \" + code,\n    progress: flow.get(\"execution_progress\") || 0,\n    executed: false,\n    executed_done: false,\n    session_has_drawing: true\n});\n\nmsg.ip = \"127.0.0.1\";\nmsg.host = \"127.0.0.1\";\nmsg.port = 5006;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1390,
+        "y": 1200,
+        "wires": [
+            [
+                "414875922b7d6e4e",
+                "45cbd856808d32bf"
             ]
         ]
     }
